@@ -6,48 +6,69 @@
 
 ## ---- 01: The Shape Problem  (qmd line 15) -------------------------------------------
 
+library(dnsr)
+
+# The Chapter 5 simulation this chapter reshapes: sim$yields is
+# [time x maturity x path]
+mats <- c(0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30)
+sim <- simulate_dns_yield_curves(
+  params = list(kappa = c(0.08, 0.40, 0.60),
+                theta = c(0.04, -0.01, 0.01),
+                sigma = c(0.005, 0.012, 0.020)),
+  initial_factors = c(0.045, -0.005, 0.012),
+  maturities = mats, time_horizon = 30,
+  n_steps = 360, n_paths = 20, seed = 42
+)
+
 # Reorganize: sim$yields[time, maturity, path]
 #   -> yield_paths[[maturity]][path, time]
-mats <- c(0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30)
 yield_paths <- list()
 for (i in seq_along(mats)) {
   yield_paths[[as.character(mats[i])]] <- t(sim$yields[, i, ])
 }
 
 
-## ---- 02: Prime Rate  (qmd line 45) --------------------------------------------------
+## ---- 02: Prime Rate  (qmd line 58) --------------------------------------------------
 
 yield_paths$PRIME <- yield_paths$"0.25" + 0.03
 
 
-## ---- 03: SOFR, Fed Funds, and Legacy Libor  (qmd line 61) ---------------------------
+## ---- 03: SOFR, Fed Funds, and Legacy Libor  (qmd line 74) ---------------------------
 
 yield_paths$SOFR <- yield_paths$"0.25"  # short rate directly; no spread
 
 
-## ---- 04: SOFR, Fed Funds, and Legacy Libor  (qmd line 69) ---------------------------
+## ---- 04: SOFR, Fed Funds, and Legacy Libor  (qmd line 82) ---------------------------
 
 yield_paths$FF <- yield_paths$"0.25" - 0.002  # 20 bp below 3M in typical regimes
 
 
-## ---- 05: SOFR, Fed Funds, and Legacy Libor  (qmd line 77) ---------------------------
+## ---- 05: SOFR, Fed Funds, and Legacy Libor  (qmd line 90) ---------------------------
 
 # 3M Libor ~ 3M Treasury + 30 bp (varies)
 yield_paths$LIBOR_3M <- yield_paths$"0.25" + 0.003
 
 
-## ---- 06: Rate Floors and the Zero Lower Bound  (qmd line 90) ------------------------
+## ---- 06: Rate Floors and the Zero Lower Bound  (qmd line 103) ------------------------
 
-yield_paths[[m]] <- pmax(yield_paths[[m]], 0)
+# Applied to one maturity's [path x time] matrix, or to all of them
+yield_paths[["0.25"]] <- pmax(yield_paths[["0.25"]], 0)
+yield_paths <- lapply(yield_paths, function(M) pmax(M, 0))
 
 
-## ---- 07: Writing Output for the Cashflow Stage  (qmd line 207) -----------------------
+## ---- 07: Writing Output for the Cashflow Stage  (qmd line 222) -----------------------
+
+# Pipeline metadata accompanying the paths
+dns_params <- sim$params          # the calibrated parameters simulated from
+T_s        <- Sys.Date()          # settlement date
+P          <- dim(sim$yields)[3]  # paths
+T_max      <- dim(sim$yields)[1] - 1
 
 scenario_output <- list(
   mode          = "stochastic",  # or "scenario"
   yield_paths   = yield_paths,     # named list, one per maturity
   prime_path    = yield_paths$PRIME,
-  factor_paths  = factors_sim,     # raw DNS factors for diagnostics
+  factor_paths  = sim$factors,     # raw DNS factors for diagnostics
   params        = dns_params,      # calibrated parameters
   settlement_date = T_s,
   n_paths       = P,
@@ -61,19 +82,19 @@ scenario_output <- list(
 )
 
 
-## ---- 08: Reshaping `[time × maturity × path]` to `[path × time]`  (qmd line 234) -----
+## ---- 08: Reshaping `[time × maturity × path]` to `[path × time]`  (qmd line 255) -----
 
 library(dnsr)
 
 mats <- c(0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30)
 yield_paths <- list()
 for (i in seq_along(mats)) {
-  yield_paths[[as.character(mats[i])]] <- t(sim_full$yields[, i, ])
+  yield_paths[[as.character(mats[i])]] <- t(sim$yields[, i, ])
 }
 str(yield_paths[["10"]])     # n_paths x n_months
 
 
-## ---- 09: Constructing Reference Rates  (qmd line 247) --------------------------------
+## ---- 09: Constructing Reference Rates  (qmd line 268) --------------------------------
 
 # Prime = 3M Treasury + 300 bp
 yield_paths$PRIME <- yield_paths[["0.25"]] + 0.03
@@ -85,7 +106,7 @@ yield_paths$SOFR  <- yield_paths[["0.25"]]
 yield_paths$LIBOR_3M <- yield_paths[["0.25"]] + 0.003
 
 
-## ---- 10: Rate Floor Application  (qmd line 260) --------------------------------------
+## ---- 10: Rate Floor Application  (qmd line 281) --------------------------------------
 
 # Hard floor at zero
 yield_paths_floored <- lapply(yield_paths, function(M) pmax(M, 0))
@@ -95,7 +116,7 @@ soft_floor <- function(x, k = 100) log1p(exp(k * x)) / k
 yield_paths_soft <- lapply(yield_paths, soft_floor)
 
 
-## ---- 11: Scenario Mode (User Helper)  (qmd line 271) ---------------------------------
+## ---- 11: Scenario Mode (User Helper)  (qmd line 292) ---------------------------------
 
 # Helper: deterministic shifted Prime paths (not in package — illustrative)
 scenario_prime_paths <- function(base_path, shifts_bp = c(-50, -25, 0, 25, 50)) {
@@ -115,7 +136,7 @@ scenarios  <- scenario_prime_paths(prime_path)
 str(scenarios)
 
 
-## ---- 12: Fan Chart Visualization  (qmd line 292) -------------------------------------
+## ---- 12: Fan Chart Visualization  (qmd line 313) -------------------------------------
 
 library(ggplot2)
 library(dplyr)
@@ -135,7 +156,7 @@ ggplot(fan_data, aes(x = month)) +
        title = "Fan chart: 10Y Treasury yield, simulated")
 
 
-## ---- 13: Cross-Maturity Consistency Diagnostic  (qmd line 313) -----------------------
+## ---- 13: Cross-Maturity Consistency Diagnostic  (qmd line 334) -----------------------
 
 # 10Y - 2Y spread across paths at horizon = 5 yrs
 library(ggplot2)
@@ -147,7 +168,7 @@ ggplot(data.frame(spread_bps = spread_5y * 10000), aes(spread_bps)) +
   theme_minimal()
 
 
-## ---- 14: Realism Checks  (qmd line 326) ----------------------------------------------
+## ---- 14: Realism Checks  (qmd line 347) ----------------------------------------------
 
 # Flag explosive paths
 extreme_paths <- which(apply(yield_paths[["10"]], 1,
@@ -155,7 +176,8 @@ extreme_paths <- which(apply(yield_paths[["10"]], 1,
 length(extreme_paths)   # should be tiny fraction of 500
 
 # KS test against historical distribution
-hist_10y <- panel %>% filter(maturity == 10) %>% pull(yield)
+panel    <- get_treasury_yield_combined(start_date = "2010-01-01")
+hist_10y <- panel[["10"]] / 100
 ks.test(yield_paths[["10"]][, 1], hist_10y)
 
 

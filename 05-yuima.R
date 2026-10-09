@@ -6,6 +6,14 @@
 
 ## ---- 01: The `setModel` Interface  (qmd line 29) ------------------------------------
 
+library(yuima)
+
+# The two model-specific arguments, built in full later in this chapter
+drift_expressions <- c("0.08*(0.04 - beta1)",
+                       "0.40*(-0.01 - beta2)",
+                       "0.60*(0.01 - beta3)")
+diffusion_matrix  <- diag(c(0.005, 0.012, 0.020))
+
 yuima_model <- yuima::setModel(
   drift          = drift_expressions,   # character vector of drift terms
   diffusion      = diffusion_matrix,    # matrix of diffusion coefficients
@@ -18,7 +26,7 @@ yuima_model <- yuima::setModel(
 )
 
 
-## ---- 02: The `setSampling` Interface  (qmd line 55) ---------------------------------
+## ---- 02: The `setSampling` Interface  (qmd line 63) ---------------------------------
 
 sampling <- yuima::setSampling(
   Initial   = 0,
@@ -33,7 +41,10 @@ sampling <- yuima::setSampling(
 )
 
 
-## ---- 03: The `simulate` Method  (qmd line 75) ---------------------------------------
+## ---- 03: The `simulate` Method  (qmd line 83) ---------------------------------------
+
+initial_factors  <- c(0.045, -0.005, 0.012)  # level, slope, curvature
+true_params_list <- list()                   # drift/diffusion are numeric
 
 yuima_sim <- yuima::simulate(
   yuima_model,
@@ -47,7 +58,7 @@ yuima_sim <- yuima::simulate(
 )
 
 
-## ---- 04: Model Specification for DNS  (qmd line 94) ---------------------------------
+## ---- 04: Model Specification for DNS  (qmd line 105) ---------------------------------
 
 # Conceptual construction
 kappa  <- c(0.08, 0.40, 0.60)  # level, slope, curvature speeds
@@ -73,7 +84,7 @@ yuima_model <- yuima::setModel(
 )
 
 
-## ---- 05: DNS Calibration Workflow  (qmd line 125) ------------------------------------
+## ---- 05: DNS Calibration Workflow  (qmd line 136) ------------------------------------
 
 library(dnsr)
 
@@ -108,7 +119,7 @@ sim <- simulate_dns_yield_curves(
 )
 
 
-## ---- 06: Step 4: Simulate yield curve paths via YUIMA  (qmd line 167) ----------------
+## ---- 06: Step 4: Simulate yield curve paths via YUIMA  (qmd line 178) ----------------
 
 as_of <- Sys.Date()
 
@@ -121,7 +132,7 @@ calib <- get_calibrated_dns_params(
 )
 
 
-## ---- 07: A Worked End-to-End Example  (qmd line 292) ---------------------------------
+## ---- 07: A Worked End-to-End Example  (qmd line 303) ---------------------------------
 
 library(dnsr)
 library(yuima)
@@ -154,7 +165,7 @@ plot_simulated_factors(factor_sim)
 colMeans(factor_sim$factors[361, , ])   # long-run means vs calib$params$theta
 
 
-## ---- 08: Building a YUIMA Model from DNS Parameters  (qmd line 343) ------------------
+## ---- 08: Building a YUIMA Model from DNS Parameters  (qmd line 354) ------------------
 
 library(yuima)
 library(dnsr)
@@ -178,7 +189,7 @@ mod <- setModel(drift = drift,
                 xinit = c(0.04, -0.01, 0.01))
 
 
-## ---- 09: Simulation  (qmd line 368) --------------------------------------------------
+## ---- 09: Simulation  (qmd line 379) --------------------------------------------------
 
 samp <- setSampling(Initial = 0, Terminal = 30, n = 360)
 sim  <- simulate(mod, sampling = samp,
@@ -195,7 +206,7 @@ ggplot(factors_df, aes(Index, Value, colour = Series)) +
   theme_minimal()
 
 
-## ---- 10: One-Call DNS Pipeline via `dnsr::simulate_dns_yield_curves`  (qmd line 386) -
+## ---- 10: One-Call DNS Pipeline via `dnsr::simulate_dns_yield_curves`  (qmd line 397) -
 
 sim_full <- simulate_dns_yield_curves(
   params          = dns_dynamics_to_sim_params(dynamics),
@@ -209,7 +220,7 @@ sim_full <- simulate_dns_yield_curves(
 dim(sim_full$yields)  # [time, maturity, path]
 
 
-## ---- 11: Stationarity Diagnostic  (qmd line 401) -------------------------------------
+## ---- 11: Stationarity Diagnostic  (qmd line 412) -------------------------------------
 
 # Long-run mean and variance check (factors stored alongside yields)
 factors_long <- sim_full$factors    # [time, path, factor]
@@ -222,7 +233,7 @@ apply(final_state, 2, sd)
 expected_sd <- sigma / sqrt(2 * kappa)
 
 
-## ---- 12: QMLE Estimation via `dnsr::estimate_dns_parameters_yuima`  (qmd line 415) ---
+## ---- 12: QMLE Estimation via `dnsr::estimate_dns_parameters_yuima`  (qmd line 426) ---
 
 # dnsr wraps yuima's qmle for DNS factor dynamics; estimated on the
 # same month-end factor series as Step 3 of the pipeline
@@ -234,7 +245,7 @@ qmle_fit$estimated_params
 summary(qmle_fit$fit_result)   # QMLE estimates with standard errors
 
 
-## ---- 13: Level-Shifting (User Helper)  (qmd line 428) --------------------------------
+## ---- 13: Level-Shifting (User Helper)  (qmd line 439) --------------------------------
 
 # Helper: anchor simulated curves to observed market rates at t=0
 # (not in package — illustrative)
@@ -247,6 +258,12 @@ level_shift <- function(sim_yields, market_curve, maturities) {
   sim_yields
 }
 
+# Observed market curve at the valuation date (Chapter 1); the demo
+# uses a representative snapshot
+mats <- c(0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30)
+snap <- data.frame(maturity = mats,
+                   yield = c(0.0533, 0.0528, 0.0497, 0.0450, 0.0425,
+                             0.0411, 0.0415, 0.0423, 0.0452, 0.0442))
 mkt_curve <- snap$yield
 sim_shifted <- level_shift(sim_full$yields, mkt_curve, mats)
 

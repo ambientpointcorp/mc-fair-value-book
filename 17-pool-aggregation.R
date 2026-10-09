@@ -6,8 +6,27 @@
 
 ## ---- 01: Memory-Optimized Batch Processing  (qmd line 81) ---------------------------
 
-# The streaming aggregation pattern
-cf_pool_path <- matrix(0, nrow = n_paths, ncol = n_months)
+library(oasr)
+
+# The pool and scenario set this pattern streams over
+pool_assets <- oasr::sample_abs_data
+n_loans     <- nrow(pool_assets)
+n_paths     <- 50
+n_months    <- 360
+rate_paths  <- simulate_rates(
+  list(params = list(kappa = c(0.3, 0.5, 0.8),
+                     theta = c(0.04, -0.01, 0.01),
+                     sigma = c(0.010, 0.012, 0.015)),
+       initial_factors = c(0.035, -0.015, 0.005),
+       lambda = 0.7308),
+  n_paths = n_paths, n_periods = n_months, seed = 42)
+prepay_mod  <- prepayment_model(type = "cpr_cdr", base_cpr = 0.06,
+                                base_cdr = 0.01, recovery_rate = 0.65)
+
+# The streaming aggregation pattern. oasr returns month 0 alongside the
+# n_months projected periods, so the accumulator carries n_months + 1
+# columns.
+cf_pool_path <- matrix(0, nrow = n_paths, ncol = n_months + 1)
 
 # Per-loan projection, vectorized over paths, via oasr primitives
 # (column 9 of the oasr cashflow array is the total cashflow)
@@ -26,7 +45,15 @@ for (i in seq_len(n_loans)) {
 }
 
 
-## ---- 02: Vectorization Over Paths  (qmd line 114) ------------------------------------
+## ---- 02: Vectorization Over Paths  (qmd line 133) ------------------------------------
+
+# One loan, one month, all paths: balance, coupon and remaining term are
+# path vectors (coupon varies by path on a floating-rate loan)
+B_t_paths  <- rep(1e6, n_paths)        # balance at the start of the month
+c_paths    <- rate_paths$yield_paths[["10"]][, 1] + 0.02   # coupon
+tau        <- 300                      # remaining term, months
+SMM_paths  <- rep(0.005, n_paths)
+MDR_paths  <- rep(0.001, n_paths)
 
 # pmt for all paths at once
 pmt_paths <- B_t_paths * (c_paths / 12) / (1 - (1 + c_paths / 12)^(-tau))
@@ -38,9 +65,10 @@ P_paths   <- psched * (1 - SMM_paths - MDR_paths)
 B_next    <- B_t_paths - P_paths - VP_paths - D_paths
 
 
-## ---- 03: Parallelization Patterns  (qmd line 131) ------------------------------------
+## ---- 03: Parallelization Patterns  (qmd line 158) ------------------------------------
 
 library(future.apply)
+library(future); library(future.apply)
 plan(multisession, workers = 8)
 
 cf_pool_path <- Reduce("+", future_lapply(seq_len(n_loans), function(i) {
@@ -49,7 +77,7 @@ cf_pool_path <- Reduce("+", future_lapply(seq_len(n_loans), function(i) {
 }))
 
 
-## ---- 04: Weighted-Average Summaries  (qmd line 211) ----------------------------------
+## ---- 04: Weighted-Average Summaries  (qmd line 239) ----------------------------------
 
 library(dplyr)
 
@@ -66,7 +94,7 @@ pool_summaries <- loan_tape %>%
 pool_summaries
 
 
-## ---- 05: Stratification by Coupon Stack  (qmd line 229) ------------------------------
+## ---- 05: Stratification by Coupon Stack  (qmd line 257) ------------------------------
 
 loan_tape %>%
   mutate(coupon_bucket = cut(coupon,
@@ -77,10 +105,12 @@ loan_tape %>%
             pct = balance / sum(loan_tape$current_balance))
 
 
-## ---- 06: Memory-Optimized Pool Aggregation via `oasr`  (qmd line 241) ----------------
+## ---- 06: Memory-Optimized Pool Aggregation via `oasr`  (qmd line 269) ----------------
 
 # oasr::project_cashflows runs loan-level projection with optional
 # parallel execution; aggregate_cashflows reduces to pool/tranche level
+credit_v  <- calculate_credit_vectors(pool_assets, rate_paths, prepay_mod)
+deal_structure <- oasr::sample_deal_structure
 ref_rates <- extract_reference_rates(rate_paths)   # [n_paths x n_periods]
 loan_cfs  <- project_cashflows(pool_assets, credit_v,
                                reference_rates = ref_rates,
@@ -88,9 +118,10 @@ loan_cfs  <- project_cashflows(pool_assets, credit_v,
 pool_cf   <- aggregate_cashflows(loan_cfs, pool_assets, deal_structure)
 
 
-## ---- 07: Parallel Aggregation with `future.apply` (Custom Loop)  (qmd line 253) ------
+## ---- 07: Parallel Aggregation with `future.apply` (Custom Loop)  (qmd line 283) ------
 
 library(future.apply)
+library(future); library(future.apply)
 plan(multisession, workers = 8)
 
 # Helper: parallel per-loan projection driven by oasr primitives
@@ -103,7 +134,7 @@ per_loan_cf <- function(i) {
 loan_cfs_par <- future_lapply(seq_len(nrow(pool_assets)), per_loan_cf)
 
 
-## ---- 08: Representative-Line Approximation (User Helper)  (qmd line 269) -------------
+## ---- 08: Representative-Line Approximation (User Helper)  (qmd line 300) -------------
 
 # Helper: synthetic single-loan asset built from WAC/WAM/WALA
 # (columns follow the oasr asset_data convention)
@@ -124,7 +155,7 @@ rep_cf    <- project_cashflows(rep_asset, rep_cv,
                                 reference_rates = ref_rates)
 
 
-## ---- 09: Convergence Diagnostic  (qmd line 291) --------------------------------------
+## ---- 09: Convergence Diagnostic  (qmd line 322) --------------------------------------
 
 running_mean <- function(npv_paths) cumsum(npv_paths) / seq_along(npv_paths)
 running_se   <- function(npv_paths) {
@@ -133,6 +164,10 @@ running_se   <- function(npv_paths) {
 }
 
 library(ggplot2)
+
+# Path-level NPVs from the pool projection above
+npv_paths <- colSums(t(cf_pool_path) * 1)   # one NPV draw per path
+
 conv_df <- data.frame(path = seq_along(npv_paths),
                       mean = running_mean(npv_paths),
                       se   = running_se(npv_paths))
