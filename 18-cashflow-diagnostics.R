@@ -111,15 +111,24 @@ platform_compare <- function(engine_clean, platform_clean,
 
 library(profvis)
 
-# Profile the pool-level cashflow projection
+library(oasr)
+
+# The pool bundled with oasr, and a flat rate scenario to profile against
+asset_data <- oasr::sample_abs_data
+n_months   <- 360
+rate_paths <- list(yield_paths = list(
+  "10" = matrix(0.0825, nrow = 100, ncol = n_months)))
+
+prepay <- prepayment_model(type = "cpr_cdr", base_cpr = 0.06, base_cdr = 0.01)
+cv     <- calculate_credit_vectors(asset_data, rate_paths, prepay)
+
 p <- profvis({
-  cf_pool <- project_cashflows(asset_data, cv, n_periods = 360,
-                               reference_rates = flat_rates)
+  cf_pool <- project_cashflows(asset_data, cv, n_periods = n_months)
 })
 # print(p) opens the interactive flame graph
 
 
-## ---- 08: Dashboard  (qmd line 345) ---------------------------------------------------
+## ---- 08: Dashboard  (qmd line 354) ---------------------------------------------------
 
 print_diagnostics <- function(pool_id, run_results) {
   cat("Pool:", pool_id, "\n")

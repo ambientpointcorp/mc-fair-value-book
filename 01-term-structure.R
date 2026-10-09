@@ -75,7 +75,7 @@ rates <- simulate_rates(
 )
 
 # Stage 2: project credit vectors (oasr)
-asset_data <- transform(oasr::sample_abs_data, term = wam + age)
+asset_data <- oasr::sample_abs_data   # bundled sample pool
 prepay     <- prepayment_model(type = "cpr_cdr",
                                 base_cpr = 0.06, base_cdr = 0.01)
 credit_v   <- calculate_credit_vectors(asset_data, rates, prepay)

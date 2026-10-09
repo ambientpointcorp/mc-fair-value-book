@@ -60,20 +60,25 @@ cf_io <- project_cashflows_with_io(asset_data, credit_v,
 ## ---- 03: Balance Identity Check (User Helper)  (qmd line 306) ------------------------
 
 # Helper: validate balance recursion on the projected cashflows.
-# oasr cashflow columns: 1 = ending balance, 2 = scheduled principal,
-# 3 = voluntary prepay, 4 = default.
+# Column positions come from cashflow_components(), which returns the
+# named map for each level ("asset", "asset_io", "bond"); for assets
+# 1 = ending balance, 2 = scheduled principal, 3 = prepayment,
+# 4 = default.
+idx <- cashflow_components("asset")
+
 # Identity: B_{t+1} = B_t - P_t - VP_t - D_t
 check_balance_identity <- function(cf_mat, B0) {
-  B_end   <- cf_mat[, 1]
+  B_end   <- cf_mat[, idx["balance"]]
   B_begin <- c(B0, B_end[-length(B_end)])
-  err <- B_end - (B_begin - cf_mat[, 2] - cf_mat[, 3] - cf_mat[, 4])
+  err <- B_end - (B_begin - cf_mat[, idx["scheduled_principal"]] -
+                    cf_mat[, idx["prepayment"]] - cf_mat[, idx["default"]])
   max(abs(err))
 }
 
 check_balance_identity(cf[[1]][, , 1], asset_data$balance[1])
 
 
-## ---- 04: Pool-Level Aggregation via `oasr::aggregate_cashflows`  (qmd line 323) ------
+## ---- 04: Pool-Level Aggregation via `oasr::aggregate_cashflows`  (qmd line 328) ------
 
 # Build a multi-loan pool
 set.seed(42)
@@ -108,7 +113,7 @@ pool_cf     <- aggregate_cashflows(loan_cfs, pool_assets, deal)
 str(pool_cf, max.level = 1)
 
 
-## ---- 05: Average Life  (qmd line 359) ------------------------------------------------
+## ---- 05: Average Life  (qmd line 364) ------------------------------------------------
 
 # oasr::calculate_average_life produces WAL of the aggregated cashflows
 # (in the tranche-level arrays, column 2 holds principal)

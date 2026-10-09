@@ -61,7 +61,7 @@ scenario_output <- list(
 )
 
 
-## ---- 08: Reshaping `[time × maturity × path]` to `[path × time]`  (qmd line 234) --
+## ---- 08: Reshaping `[time × maturity × path]` to `[path × time]`  (qmd line 234) -----
 
 library(dnsr)
 
@@ -108,13 +108,14 @@ scenario_prime_paths <- function(base_path, shifts_bp = c(-50, -25, 0, 25, 50)) 
 }
 
 # oasr::extract_reference_rates pulls a chosen tenor from the rate-paths object
+library(oasr)
 prime_path <- extract_reference_rates(list(yield_paths = yield_paths),
                                       reference_key = "0.25")[1, ] + 0.03
 scenarios  <- scenario_prime_paths(prime_path)
 str(scenarios)
 
 
-## ---- 12: Fan Chart Visualization  (qmd line 291) -------------------------------------
+## ---- 12: Fan Chart Visualization  (qmd line 292) -------------------------------------
 
 library(ggplot2)
 library(dplyr)
@@ -134,7 +135,7 @@ ggplot(fan_data, aes(x = month)) +
        title = "Fan chart: 10Y Treasury yield, simulated")
 
 
-## ---- 13: Cross-Maturity Consistency Diagnostic  (qmd line 312) -----------------------
+## ---- 13: Cross-Maturity Consistency Diagnostic  (qmd line 313) -----------------------
 
 # 10Y - 2Y spread across paths at horizon = 5 yrs
 library(ggplot2)
@@ -146,7 +147,7 @@ ggplot(data.frame(spread_bps = spread_5y * 10000), aes(spread_bps)) +
   theme_minimal()
 
 
-## ---- 14: Realism Checks  (qmd line 325) ----------------------------------------------
+## ---- 14: Realism Checks  (qmd line 326) ----------------------------------------------
 
 # Flag explosive paths
 extreme_paths <- which(apply(yield_paths[["10"]], 1,

@@ -54,7 +54,24 @@ filt <- KFS(fit$model)
 beta_smoothed <- filt$alphahat
 
 
-## ---- 02: A Typical Calibration Workflow  (qmd line 268) ------------------------------
+## ---- 02: Extract smoothed factor estimates  (qmd line 127) ---------------------------
+
+library(dnsr)
+
+panel <- get_treasury_yield_combined(start_date = "2010-01-01")
+
+# One-step: factors filtered out of the yields, lambda estimated jointly
+ss <- estimate_dns_state_space(panel, n_days = 500,
+                               lambda = ns_lambda(3.5),
+                               measurement = "common")
+summary(ss)          # kappa, theta, sigma, shock correlation, measurement SD
+head(ss$factors)     # smoothed factors, same shape as the two-step betas
+
+# Feeds the simulation stage directly, with no conversion
+params <- dns_dynamics_to_sim_params(ss)
+
+
+## ---- 03: A Typical Calibration Workflow  (qmd line 288) ------------------------------
 
 library(dnsr)
 
@@ -80,15 +97,17 @@ fit <- estimate_dns_dynamics(factors_ts, dt = 1/12)
 saveRDS(fit, "dns_calibrated_params.rds")
 
 
-## ---- 03: Date-by-Date Fit and Factor Time Series  (qmd line 319) ---------------------
+## ---- 04: Date-by-Date Fit and Factor Time Series  (qmd line 339) ---------------------
 
 library(dnsr)
 library(dplyr); library(purrr); library(tibble)
 library(ggplot2)
 
-# Build factor time series via dnsr::fit_dns_model
+# Build factor time series via dnsr::fit_dns_model. n_days defaults to
+# 60, which leaves too few month-ends for the dynamics step below, so
+# fit a multi-year window (Chapter 5 uses the same 1250-day window).
 panel <- get_treasury_yield_combined(start_date = "2010-01-01")
-fit_panel <- fit_dns_model(panel, initial_lambda = 0.7308,
+fit_panel <- fit_dns_model(panel, n_days = 1250, initial_lambda = 0.7308,
                            lambda_constraint = "fixed")
 # fit_panel$parameters is a data.frame: Date, beta1, beta2, beta3,
 # lambda, rmse, plus day-over-day factor changes
@@ -101,7 +120,7 @@ ggplot(factor_ts, aes(Date, beta1)) +
   theme_minimal()
 
 
-## ---- 04: Estimating OU Dynamics  (qmd line 341) --------------------------------------
+## ---- 05: Estimating OU Dynamics  (qmd line 363) --------------------------------------
 
 # Subsample month-end factors: daily refits re-measure the same
 # underlying factors with noise, which biases mean-reversion speeds
@@ -126,7 +145,7 @@ ou_fits <- lapply(factor_monthly[, c("beta1","beta2","beta3")],
 ou_fits$beta1
 
 
-## ---- 05: Multivariate Estimation via `dnsr::estimate_dns_dynamics`  (qmd line 367) ---
+## ---- 06: Multivariate Estimation via `dnsr::estimate_dns_dynamics`  (qmd line 389) ---
 
 # Use dnsr's bundled estimator for the full 3x3 system, on the same
 # month-end subsample (factor changes recomputed at the monthly step)
@@ -138,7 +157,7 @@ dynamics <- estimate_dns_dynamics(factor_monthly, dt = 1/12)
 str(dynamics, max.level = 1)   # per-factor kappa/theta/sigma + correlation
 
 
-## ---- 06: Kalman Filter via KFAS  (qmd line 380) --------------------------------------
+## ---- 07: Kalman Filter via KFAS  (qmd line 402) --------------------------------------
 
 library(KFAS)
 
@@ -162,7 +181,7 @@ filt <- KFS(mod)
 # filt$alphahat: smoothed factor estimates
 
 
-## ---- 07: Forecasting  (qmd line 405) -------------------------------------------------
+## ---- 08: Forecasting  (qmd line 427) -------------------------------------------------
 
 # Simple VAR(1) forecast on the month-end factors: 12 steps ahead
 # at the monthly frequency is a one-year horizon

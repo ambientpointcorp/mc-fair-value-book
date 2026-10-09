@@ -15,6 +15,8 @@ hedge_notionals <- function(D_hedge, d_pool) {
 
 ## ---- 02: Duration-Match Hedge (User Helpers Built on `oasr` Outputs)  (qmd line 242) -
 
+library(oasr)
+
 # Pool's effective duration and base value from oasr
 dc <- calculate_duration_convexity(pool_cf, rate_paths,
                                     oas = oas_result$oas, shock = 100,
@@ -37,7 +39,7 @@ n_contracts <- -dv01_pool / dv01_5y
 n_contracts
 
 
-## ---- 03: KR-Match Linear System  (qmd line 267) --------------------------------------
+## ---- 03: KR-Match Linear System  (qmd line 269) --------------------------------------
 
 # Pool's KR DV01 vector ($/bp at each tenor)
 kr_dv01_pool <- krd_vec * V0 / 10000
@@ -56,7 +58,7 @@ hedge_notionals <- -solve(t(hedge_dv01) %*% hedge_dv01,
 hedge_notionals
 
 
-## ---- 04: Regression Hedging  (qmd line 287) ------------------------------------------
+## ---- 04: Regression Hedging  (qmd line 289) ------------------------------------------
 
 # Use historical daily P&L to fit hedge betas
 fit_hedge <- lm(pnl_pool ~ pnl_2y + pnl_5y + pnl_10y - 1,
@@ -67,7 +69,7 @@ hedge_check <- with(historical_pnl,
 sd(hedge_check) / sd(historical_pnl$pnl_pool)   # tracking ratio
 
 
-## ---- 05: Convexity / Gamma Hedge  (qmd line 299) -------------------------------------
+## ---- 05: Convexity / Gamma Hedge  (qmd line 301) -------------------------------------
 
 # Long swaption straddle to neutralize negative convexity
 gamma_swaption <- function(notional, vol, expiry, tenor) {
@@ -82,7 +84,7 @@ straddle_size <- target_gamma / gamma_swaption(1, vol = 0.20,
                                                 tenor = 5)
 
 
-## ---- 06: P&L Attribution Under Hedge  (qmd line 315) ---------------------------------
+## ---- 06: P&L Attribution Under Hedge  (qmd line 317) ---------------------------------
 
 attribute_hedged_pnl <- function(pnl_pool, pnl_hedge, sens, mkt) {
   total_pnl <- pnl_pool + pnl_hedge
@@ -97,7 +99,7 @@ attribute_hedged_pnl <- function(pnl_pool, pnl_hedge, sens, mkt) {
 }
 
 
-## ---- 07: VaR and Expected Shortfall  (qmd line 331) ----------------------------------
+## ---- 07: VaR and Expected Shortfall  (qmd line 333) ----------------------------------
 
 library(PerformanceAnalytics)
 
@@ -120,7 +122,7 @@ VaR(scenario_pnl / V0, p = 0.95,  method = "historical")
 ES(scenario_pnl / V0,  p = 0.975, method = "historical")
 
 
-## ---- 08: Dynamic Rebalancing  (qmd line 355) -----------------------------------------
+## ---- 08: Dynamic Rebalancing  (qmd line 357) -----------------------------------------
 
 needs_rebalance <- function(current_dur, target_dur,
                              threshold = 0.20) {
@@ -135,7 +137,7 @@ if (needs_rebalance(current_dur, 0)) {
 }
 
 
-## ---- 09: Hedge Effectiveness Test (ASC 815)  (qmd line 371) --------------------------
+## ---- 09: Hedge Effectiveness Test (ASC 815)  (qmd line 373) --------------------------
 
 test_hedge_effectiveness <- function(pnl_pool, pnl_hedge,
                                       threshold = 0.80) {
