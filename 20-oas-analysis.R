@@ -24,7 +24,35 @@ solve_oas_bisect <- function(price_target, cashflows, times, rate_paths,
 }
 
 
-## ---- 02: OAS Solver via `oasr::calculate_oas`  (qmd line 290) ------------------------
+## ---- 02: Setup: the Shared Part IV Pool  (qmd line 292) ------------------------------
+
+library(oasr)
+
+pool_assets <- oasr::sample_abs_data
+deal_structure <- oasr::sample_deal_structure
+dns_params  <- list(
+  params = list(kappa = c(0.3, 0.5, 0.8),
+                theta = c(0.04, -0.01, 0.01),
+                sigma = c(0.010, 0.012, 0.015)),
+  initial_factors = c(0.035, -0.015, 0.005),
+  lambda = 0.7308
+)
+rate_paths <- simulate_rates(dns_params, n_paths = 100,
+                             n_periods = 360, seed = 42)
+prepay_mod <- prepayment_model(type = "cpr_cdr", base_cpr = 0.06,
+                               base_cdr = 0.01, recovery_rate = 0.65)
+credit_v   <- calculate_credit_vectors(pool_assets, rate_paths, prepay_mod)
+ref_rates  <- extract_reference_rates(rate_paths, reference_key = "10")
+asset_cf   <- project_cashflows(pool_assets, credit_v,
+                                reference_rates = ref_rates)
+pool_cf    <- aggregate_cashflows(asset_cf, pool_assets, deal_structure,
+                                  reference_rates = ref_rates)
+oas_result <- calculate_oas(pool_assets, rate_paths, prepay_mod,
+                            market_price = 100, deal_structure = deal_structure,
+                            verbose = FALSE)
+
+
+## ---- 03: OAS Solver via `oasr::calculate_oas`  (qmd line 321) ------------------------
 
 library(oasr)
 
@@ -43,7 +71,7 @@ oas_result$iterations
 oas_result$converged
 
 
-## ---- 03: Lower-Level `binary_search_oas`  (qmd line 310) -----------------------------
+## ---- 04: Lower-Level `binary_search_oas`  (qmd line 341) -----------------------------
 
 # When you already have projected cashflows and want a direct solve:
 # collapse the aggregated pool cashflows to a path-average vector per 100 par
@@ -62,7 +90,13 @@ oas_direct <- binary_search_oas(
 oas_direct$oas   # in bps
 
 
-## ---- 04: Z-Spread via `oasr::calculate_z_spread`  (qmd line 330) ---------------------
+## ---- 05: Z-Spread via `oasr::calculate_z_spread`  (qmd line 361) ---------------------
+
+# The spot curve to discount against: the path-average reference-rate
+# path, which is the deterministic curve the simulation implies
+spot_curve <- colMeans(extract_reference_rates(rate_paths,
+                                               reference_key = "10"))[
+  seq_along(times)]
 
 # Static spread vs spot curve
 z <- calculate_z_spread(
@@ -75,13 +109,13 @@ z <- calculate_z_spread(
 z$z_spread   # in bps
 
 
-## ---- 05: Option Cost via `oasr::calculate_option_cost`  (qmd line 344) ---------------
+## ---- 06: Option Cost via `oasr::calculate_option_cost`  (qmd line 381) ---------------
 
 opt_cost <- calculate_option_cost(z_spread = z$z_spread, oas = oas_result$oas)
 opt_cost   # bps
 
 
-## ---- 06: OAS Sensitivity via `oasr::run_oas_sensitivity`  (qmd line 351) -------------
+## ---- 07: OAS Sensitivity via `oasr::run_oas_sensitivity`  (qmd line 388) -------------
 
 sens <- run_oas_sensitivity(
   oas_result        = oas_result,
@@ -92,7 +126,7 @@ sens <- run_oas_sensitivity(
 plot(sens)
 
 
-## ---- 07: Reporting Packet via `oasr::create_oas_report`  (qmd line 363) --------------
+## ---- 08: Reporting Packet via `oasr::create_oas_report`  (qmd line 400) --------------
 
 # Renders via rmarkdown; returns the path to the generated file
 report_path <- create_oas_report(oas_result, output_format = "html",
@@ -100,7 +134,7 @@ report_path <- create_oas_report(oas_result, output_format = "html",
 report_path
 
 
-## ---- 08: Common Random Numbers (Architectural Note)  (qmd line 372) ------------------
+## ---- 09: Common Random Numbers (Architectural Note)  (qmd line 409) ------------------
 
 # oasr accepts the rate_paths object directly, so common-random-numbers
 # is achieved by reusing the same rate_paths across OAS attempts.

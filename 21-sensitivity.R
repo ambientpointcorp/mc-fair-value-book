@@ -24,7 +24,36 @@ compute_eff_duration <- function(cashflows, rate_paths, oas, h_bp = 25) {
 }
 
 
-## ---- 02: Effective Duration and Convexity via `oasr::calculate_duration_convexity`  (qmd line 340) -
+## ---- 02: Setup: the Shared Part IV Pool  (qmd line 340) ------------------------------
+
+library(oasr)
+
+pool_assets <- oasr::sample_abs_data
+asset_data  <- pool_assets   # alias used by some helpers below
+deal_structure <- oasr::sample_deal_structure
+dns_params  <- list(
+  params = list(kappa = c(0.3, 0.5, 0.8),
+                theta = c(0.04, -0.01, 0.01),
+                sigma = c(0.010, 0.012, 0.015)),
+  initial_factors = c(0.035, -0.015, 0.005),
+  lambda = 0.7308
+)
+rate_paths <- simulate_rates(dns_params, n_paths = 100,
+                             n_periods = 360, seed = 42)
+prepay_mod <- prepayment_model(type = "cpr_cdr", base_cpr = 0.06,
+                               base_cdr = 0.01, recovery_rate = 0.65)
+credit_v   <- calculate_credit_vectors(pool_assets, rate_paths, prepay_mod)
+ref_rates  <- extract_reference_rates(rate_paths, reference_key = "10")
+asset_cf   <- project_cashflows(pool_assets, credit_v,
+                                reference_rates = ref_rates)
+pool_cf    <- aggregate_cashflows(asset_cf, pool_assets, deal_structure,
+                                  reference_rates = ref_rates)
+oas_result <- calculate_oas(pool_assets, rate_paths, prepay_mod,
+                            market_price = 100, deal_structure = deal_structure,
+                            verbose = FALSE)
+
+
+## ---- 03: Effective Duration and Convexity via `oasr::calculate_duration_convexity`  (qmd line 372) -
 
 library(oasr)
 
@@ -44,7 +73,7 @@ dc$duration
 dc$convexity
 
 
-## ---- 03: OAS Sensitivity (Rate Shifts and PPC) via `oasr::run_oas_sensitivity`  (qmd line 361) -
+## ---- 04: OAS Sensitivity (Rate Shifts and PPC) via `oasr::run_oas_sensitivity`  (qmd line 393) -
 
 sens <- run_oas_sensitivity(
   oas_result         = oas_result,
@@ -55,7 +84,7 @@ sens <- run_oas_sensitivity(
 plot(sens)
 
 
-## ---- 04: Key-Rate Durations (User Helper Built on `oasr` Primitives)  (qmd line 373) -
+## ---- 05: Key-Rate Durations (User Helper Built on `oasr` Primitives)  (qmd line 405) -
 
 # Didactic KRD: discount the path-average pool cashflow off the reference
 # path, bumping only the months that fall in a bucket around each key tenor
@@ -83,7 +112,7 @@ krd_vec <- krd_by_bucket(pool_cf_vec, times, rate_paths,
 sum(krd_vec)
 
 
-## ---- 05: Prepayment Duration (User Helper)  (qmd line 402) ---------------------------
+## ---- 06: Prepayment Duration (User Helper)  (qmd line 434) ---------------------------
 
 prepay_duration <- function(asset_data, rate_paths, prepay_mod,
                              oas, ppc_bump = 0.10) {
@@ -108,7 +137,7 @@ prepay_duration <- function(asset_data, rate_paths, prepay_mod,
 }
 
 
-## ---- 06: Scenario Stress (User Helper)  (qmd line 428) -------------------------------
+## ---- 07: Scenario Stress (User Helper)  (qmd line 460) -------------------------------
 
 shift_all_tenors <- function(rate_paths, shift_dec) {
   rate_paths$yield_paths <- lapply(rate_paths$yield_paths,
@@ -128,7 +157,7 @@ stress_results <- lapply(scenarios, function(fn) {
 })
 
 
-## ---- 07: P&L Attribution  (qmd line 449) ---------------------------------------------
+## ---- 08: P&L Attribution  (qmd line 481) ---------------------------------------------
 
 attribute_pnl <- function(dV, sensitivities, market_moves) {
   parts <- list(
@@ -142,7 +171,7 @@ attribute_pnl <- function(dV, sensitivities, market_moves) {
 }
 
 
-## ---- 08: Sensitivity Dashboard  (qmd line 464) ---------------------------------------
+## ---- 09: Sensitivity Dashboard  (qmd line 496) ---------------------------------------
 
 V0 <- sum(calculate_present_value(pool_cf, rate_paths, oas = oas_result$oas,
                                   asset_level = FALSE, total_idx = 5)$mean_pvs)

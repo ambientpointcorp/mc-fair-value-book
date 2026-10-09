@@ -13,7 +13,56 @@ hedge_notionals <- function(D_hedge, d_pool) {
 }
 
 
-## ---- 02: Duration-Match Hedge (User Helpers Built on `oasr` Outputs)  (qmd line 242) -
+## ---- 02: Setup: the Shared Part IV Pool  (qmd line 244) ------------------------------
+
+library(oasr)
+
+pool_assets <- oasr::sample_abs_data
+deal_structure <- oasr::sample_deal_structure
+dns_params  <- list(
+  params = list(kappa = c(0.3, 0.5, 0.8),
+                theta = c(0.04, -0.01, 0.01),
+                sigma = c(0.010, 0.012, 0.015)),
+  initial_factors = c(0.035, -0.015, 0.005),
+  lambda = 0.7308
+)
+rate_paths <- simulate_rates(dns_params, n_paths = 100,
+                             n_periods = 360, seed = 42)
+prepay_mod <- prepayment_model(type = "cpr_cdr", base_cpr = 0.06,
+                               base_cdr = 0.01, recovery_rate = 0.65)
+credit_v   <- calculate_credit_vectors(pool_assets, rate_paths, prepay_mod)
+ref_rates  <- extract_reference_rates(rate_paths, reference_key = "10")
+asset_cf   <- project_cashflows(pool_assets, credit_v,
+                                reference_rates = ref_rates)
+pool_cf    <- aggregate_cashflows(asset_cf, pool_assets, deal_structure,
+                                  reference_rates = ref_rates)
+oas_result <- calculate_oas(pool_assets, rate_paths, prepay_mod,
+                            market_price = 100, deal_structure = deal_structure,
+                            verbose = FALSE)
+
+# Key-rate durations for the same pool, from the helper of @sec-sensitivity
+krd_by_bucket <- function(cf_vec, times, rate_paths, oas_bps,
+                          tenors = c(2, 5, 10, 30), h_bp = 25) {
+  h   <- h_bp / 10000
+  ref <- extract_reference_rates(rate_paths, "10")
+  oas <- oas_bps / 10000
+  pv  <- function(bump) {
+    mean(apply(ref[, seq_along(times), drop = FALSE], 1, function(r)
+      sum(cf_vec * exp(-(r + oas + bump) * times))))
+  }
+  edges <- c(0, head(tenors, -1) + diff(tenors) / 2, Inf)
+  V0 <- pv(0)
+  sapply(seq_along(tenors), function(j) {
+    w <- as.numeric(times > edges[j] & times <= edges[j + 1])
+    -(pv(+h * w) - pv(-h * w)) / (2 * h * V0)
+  })
+}
+pool_cf_vec <- rowMeans(sapply(pool_cf, function(a) rowSums(a[, 5, ])))
+times       <- seq_along(pool_cf_vec) / 12
+krd_vec     <- krd_by_bucket(pool_cf_vec, times, rate_paths, oas_result$oas)
+
+
+## ---- 03: Duration-Match Hedge (User Helpers Built on `oasr` Outputs)  (qmd line 294) -
 
 library(oasr)
 
@@ -39,7 +88,7 @@ n_contracts <- -dv01_pool / dv01_5y
 n_contracts
 
 
-## ---- 03: KR-Match Linear System  (qmd line 269) --------------------------------------
+## ---- 04: KR-Match Linear System  (qmd line 321) --------------------------------------
 
 # Pool's KR DV01 vector ($/bp at each tenor)
 kr_dv01_pool <- krd_vec * V0 / 10000
@@ -58,7 +107,21 @@ hedge_notionals <- -solve(t(hedge_dv01) %*% hedge_dv01,
 hedge_notionals
 
 
-## ---- 04: Regression Hedging  (qmd line 289) ------------------------------------------
+## ---- 05: Regression Hedging  (qmd line 341) ------------------------------------------
+
+# Daily P&L history for the pool and the candidate hedge instruments.
+# In production this is the firm's own P&L record; the illustrative
+# series below stands in for it so the example runs.
+set.seed(11)
+n_days <- 500
+historical_pnl <- within(data.frame(
+  pnl_2y  = rnorm(n_days, 0, 1200),
+  pnl_5y  = rnorm(n_days, 0, 2100),
+  pnl_10y = rnorm(n_days, 0, 3400)
+), {
+  pnl_pool <- 0.35 * pnl_2y + 0.80 * pnl_5y + 0.45 * pnl_10y +
+    rnorm(n_days, 0, 900)
+})
 
 # Use historical daily P&L to fit hedge betas
 fit_hedge <- lm(pnl_pool ~ pnl_2y + pnl_5y + pnl_10y - 1,
@@ -69,7 +132,7 @@ hedge_check <- with(historical_pnl,
 sd(hedge_check) / sd(historical_pnl$pnl_pool)   # tracking ratio
 
 
-## ---- 05: Convexity / Gamma Hedge  (qmd line 301) -------------------------------------
+## ---- 06: Convexity / Gamma Hedge  (qmd line 367) -------------------------------------
 
 # Long swaption straddle to neutralize negative convexity
 gamma_swaption <- function(notional, vol, expiry, tenor) {
@@ -84,7 +147,7 @@ straddle_size <- target_gamma / gamma_swaption(1, vol = 0.20,
                                                 tenor = 5)
 
 
-## ---- 06: P&L Attribution Under Hedge  (qmd line 317) ---------------------------------
+## ---- 07: P&L Attribution Under Hedge  (qmd line 383) ---------------------------------
 
 attribute_hedged_pnl <- function(pnl_pool, pnl_hedge, sens, mkt) {
   total_pnl <- pnl_pool + pnl_hedge
@@ -99,7 +162,7 @@ attribute_hedged_pnl <- function(pnl_pool, pnl_hedge, sens, mkt) {
 }
 
 
-## ---- 07: VaR and Expected Shortfall  (qmd line 333) ----------------------------------
+## ---- 08: VaR and Expected Shortfall  (qmd line 399) ----------------------------------
 
 library(PerformanceAnalytics)
 
@@ -122,14 +185,17 @@ VaR(scenario_pnl / V0, p = 0.95,  method = "historical")
 ES(scenario_pnl / V0,  p = 0.975, method = "historical")
 
 
-## ---- 08: Dynamic Rebalancing  (qmd line 357) -----------------------------------------
+## ---- 09: Dynamic Rebalancing  (qmd line 423) -----------------------------------------
 
 needs_rebalance <- function(current_dur, target_dur,
                              threshold = 0.20) {
   abs(current_dur - target_dur) > threshold
 }
 
-# Daily check: current_dur comes from the morning risk run
+# Daily check: current_dur is the hedged book's residual duration from
+# the morning risk run. It starts at zero when the hedge is struck and
+# drifts as rates move while the futures position stays fixed.
+current_dur <- 0.35
 if (needs_rebalance(current_dur, 0)) {
   trade_size <- (current_dur - 0) * V0 / dv01_5y / 10000
   message(sprintf("rebalance: trade %.0f contracts of 5Y futures",
@@ -137,7 +203,7 @@ if (needs_rebalance(current_dur, 0)) {
 }
 
 
-## ---- 09: Hedge Effectiveness Test (ASC 815)  (qmd line 373) --------------------------
+## ---- 10: Hedge Effectiveness Test (ASC 815)  (qmd line 442) --------------------------
 
 test_hedge_effectiveness <- function(pnl_pool, pnl_hedge,
                                       threshold = 0.80) {
