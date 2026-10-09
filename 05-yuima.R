@@ -81,8 +81,12 @@ library(dnsr)
 yield_data <- get_treasury_yield_combined(start_date = "2020-01-01")
 
 # Step 2: Fit DNS cross-sectionally to each day's curve over a
-# multi-year window
-dns_result <- fit_dns_model(yield_data, n_days = 1250)
+# multi-year window, holding lambda fixed across dates so the factor
+# series below is measured against one set of loadings. The panel's
+# maturities are in years, so lambda is per year (Chapter 2).
+dns_result <- fit_dns_model(yield_data, n_days = 1250,
+                            lambda_constraint = "fixed",
+                            initial_lambda = 0.7308)
 
 # Step 3: Estimate OU dynamics from the month-end factor series
 pars    <- dns_result$parameters[order(dns_result$parameters$Date), ]
@@ -104,13 +108,28 @@ sim <- simulate_dns_yield_curves(
 )
 
 
-## ---- 06: A Worked End-to-End Example  (qmd line 270) ---------------------------------
+## ---- 06: Step 4: Simulate yield curve paths via YUIMA  (qmd line 167) ----------------
+
+as_of <- Sys.Date()
+
+# Omit `lambda` and the decay rate is refitted on every date
+calib <- get_calibrated_dns_params(
+  lookback_days = 1250,
+  lambda        = ns_lambda(3.5),   # 0.5124 /yr, hump at 3.5 years
+  start_date    = as_of - 365 * 5,
+  end_date      = as_of
+)
+
+
+## ---- 07: A Worked End-to-End Example  (qmd line 292) ---------------------------------
 
 library(dnsr)
 library(yuima)
 
-# 1. Calibrate parameters over a multi-year window (or use defaults)
-calib <- get_calibrated_dns_params(lookback_days = 1250)
+# 1. Calibrate parameters over a multi-year window (or use defaults),
+#    with the decay rate held fixed across dates
+calib <- get_calibrated_dns_params(lookback_days = 1250,
+                                    lambda = ns_lambda(3.5))
 
 # 2. Build the YUIMA model
 yuima_mod <- dns_to_yuima_model(calib$params)
@@ -135,7 +154,7 @@ plot_simulated_factors(factor_sim)
 colMeans(factor_sim$factors[361, , ])   # long-run means vs calib$params$theta
 
 
-## ---- 07: Building a YUIMA Model from DNS Parameters  (qmd line 319) ------------------
+## ---- 08: Building a YUIMA Model from DNS Parameters  (qmd line 343) ------------------
 
 library(yuima)
 library(dnsr)
@@ -159,7 +178,7 @@ mod <- setModel(drift = drift,
                 xinit = c(0.04, -0.01, 0.01))
 
 
-## ---- 08: Simulation  (qmd line 344) --------------------------------------------------
+## ---- 09: Simulation  (qmd line 368) --------------------------------------------------
 
 samp <- setSampling(Initial = 0, Terminal = 30, n = 360)
 sim  <- simulate(mod, sampling = samp,
@@ -176,13 +195,13 @@ ggplot(factors_df, aes(Index, Value, colour = Series)) +
   theme_minimal()
 
 
-## ---- 09: One-Call DNS Pipeline via `dnsr::simulate_dns_yield_curves`  (qmd line 362) -
+## ---- 10: One-Call DNS Pipeline via `dnsr::simulate_dns_yield_curves`  (qmd line 386) -
 
 sim_full <- simulate_dns_yield_curves(
   params          = dns_dynamics_to_sim_params(dynamics),
   initial_factors = c(0.045, -0.005, 0.012),
   maturities      = c(0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30),
-  lambda          = 0.0609,
+  lambda          = 0.7308,   # per year, like the maturities
   time_horizon    = 30, n_steps = 360, n_paths = 500,
   sim_method      = "euler"
 )
@@ -190,7 +209,7 @@ sim_full <- simulate_dns_yield_curves(
 dim(sim_full$yields)  # [time, maturity, path]
 
 
-## ---- 10: Stationarity Diagnostic  (qmd line 377) -------------------------------------
+## ---- 11: Stationarity Diagnostic  (qmd line 401) -------------------------------------
 
 # Long-run mean and variance check (factors stored alongside yields)
 factors_long <- sim_full$factors    # [time, path, factor]
@@ -203,7 +222,7 @@ apply(final_state, 2, sd)
 expected_sd <- sigma / sqrt(2 * kappa)
 
 
-## ---- 11: QMLE Estimation via `dnsr::estimate_dns_parameters_yuima`  (qmd line 391) ---
+## ---- 12: QMLE Estimation via `dnsr::estimate_dns_parameters_yuima`  (qmd line 415) ---
 
 # dnsr wraps yuima's qmle for DNS factor dynamics; estimated on the
 # same month-end factor series as Step 3 of the pipeline
@@ -215,7 +234,7 @@ qmle_fit$estimated_params
 summary(qmle_fit$fit_result)   # QMLE estimates with standard errors
 
 
-## ---- 12: Level-Shifting (User Helper)  (qmd line 404) --------------------------------
+## ---- 13: Level-Shifting (User Helper)  (qmd line 428) --------------------------------
 
 # Helper: anchor simulated curves to observed market rates at t=0
 # (not in package — illustrative)

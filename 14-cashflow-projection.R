@@ -26,13 +26,14 @@ prepay_mod <- prepayment_model(type = "cpr_cdr",
                                 recovery_rate = 0.65)
 
 # simulate_rates() takes calibrated DNS parameters (Chapters 3-6) and
-# returns rate paths as a named list per maturity ($yield_paths)
+# returns rate paths as a named list per maturity ($yield_paths).
+# Its maturities default to years, so lambda is per year (Chapter 2).
 dns_params <- list(
   params = list(kappa = c(0.3, 0.5, 0.8),
                 theta = c(0.04, -0.01, 0.01),
                 sigma = c(0.010, 0.012, 0.015)),
   initial_factors = c(0.035, -0.015, 0.005),
-  lambda = 0.0609
+  lambda = 0.7308
 )
 rate_paths <- simulate_rates(dns_params, n_paths = 1,
                               n_periods = 360, seed = 42)
@@ -48,7 +49,7 @@ cf <- project_cashflows(asset_data, credit_v,
 str(cf)
 
 
-## ---- 02: Whole-Loan vs IO Cashflow with `project_cashflows_with_io`  (qmd line 296) --
+## ---- 02: Whole-Loan vs IO Cashflow with `project_cashflows_with_io`  (qmd line 297) --
 
 # Materialize whole-loan + IO components in a single call
 cf_io <- project_cashflows_with_io(asset_data, credit_v,
@@ -56,7 +57,7 @@ cf_io <- project_cashflows_with_io(asset_data, credit_v,
 # cf_io contains additional IO-strip cashflow component
 
 
-## ---- 03: Balance Identity Check (User Helper)  (qmd line 305) ------------------------
+## ---- 03: Balance Identity Check (User Helper)  (qmd line 306) ------------------------
 
 # Helper: validate balance recursion on the projected cashflows.
 # oasr cashflow columns: 1 = ending balance, 2 = scheduled principal,
@@ -72,7 +73,7 @@ check_balance_identity <- function(cf_mat, B0) {
 check_balance_identity(cf[[1]][, , 1], asset_data$balance[1])
 
 
-## ---- 04: Pool-Level Aggregation via `oasr::aggregate_cashflows`  (qmd line 322) ------
+## ---- 04: Pool-Level Aggregation via `oasr::aggregate_cashflows`  (qmd line 323) ------
 
 # Build a multi-loan pool
 set.seed(42)
@@ -107,7 +108,7 @@ pool_cf     <- aggregate_cashflows(loan_cfs, pool_assets, deal)
 str(pool_cf, max.level = 1)
 
 
-## ---- 05: Average Life  (qmd line 358) ------------------------------------------------
+## ---- 05: Average Life  (qmd line 359) ------------------------------------------------
 
 # oasr::calculate_average_life produces WAL of the aggregated cashflows
 # (in the tranche-level arrays, column 2 holds principal)

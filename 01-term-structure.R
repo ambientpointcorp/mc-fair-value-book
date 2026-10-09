@@ -64,8 +64,11 @@ library(dnsr); library(oasr)
 # Stage 1: calibrate the DNS model to recent Treasury data (dnsr),
 # then simulate rate paths in the format the oasr analytics consume
 # A multi-year window: factor dynamics (mean-reversion speeds) cannot be
-# identified from short samples, and are estimated on month-end factors
-calib <- get_calibrated_dns_params(lookback_days = 1250)
+# identified from short samples, and are estimated on month-end factors.
+# `lambda` holds the Nelson-Siegel decay rate fixed across the window, so
+# the factor series is measured against one set of loadings (Chapter 5)
+calib <- get_calibrated_dns_params(lookback_days = 1250,
+                                    lambda = ns_lambda(3.5))
 rates <- simulate_rates(
   calib, n_paths = 500, n_periods = 360,
   maturities = c(0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30)

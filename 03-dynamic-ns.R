@@ -8,7 +8,9 @@
 
 library(KFAS)
 
-# Nelson-Siegel loading matrix on the maturity grid (months)
+# Nelson-Siegel loading matrix on the maturity grid (months), so
+# lambda is the per-month 0.0609 (Chapter 2). A grid in years would
+# take 0.7308 instead.
 mats   <- c(3, 6, 12, 24, 36, 60, 84, 120, 240, 360)
 lambda <- 0.0609
 L2 <- (1 - exp(-lambda * mats)) / (lambda * mats)
@@ -52,7 +54,7 @@ filt <- KFS(fit$model)
 beta_smoothed <- filt$alphahat
 
 
-## ---- 02: A Typical Calibration Workflow  (qmd line 266) ------------------------------
+## ---- 02: A Typical Calibration Workflow  (qmd line 268) ------------------------------
 
 library(dnsr)
 
@@ -62,9 +64,11 @@ monthly  <- rates_df[order(rates_df$Date), ]
 monthly  <- monthly[!duplicated(format(monthly$Date, "%Y-%m"),
                                 fromLast = TRUE), ]  # month-end rows
 
-# 2. Extract factors via date-by-date fits with fixed lambda
+# 2. Extract factors via date-by-date fits with fixed lambda.
+# The panel's maturity columns are in years, so lambda is per year:
+# Diebold-Li's 0.0609 per month is 0.0609 * 12 (Chapter 2).
 dns_fit <- fit_dns_model(monthly, n_days = nrow(monthly),
-                         initial_lambda = 0.0609,
+                         initial_lambda = 0.7308,
                          lambda_constraint = "fixed")
 factors_ts <- dns_fit$parameters  # Date, beta1, beta2, beta3, ...
 
@@ -76,7 +80,7 @@ fit <- estimate_dns_dynamics(factors_ts, dt = 1/12)
 saveRDS(fit, "dns_calibrated_params.rds")
 
 
-## ---- 03: Date-by-Date Fit and Factor Time Series  (qmd line 311) ---------------------
+## ---- 03: Date-by-Date Fit and Factor Time Series  (qmd line 319) ---------------------
 
 library(dnsr)
 library(dplyr); library(purrr); library(tibble)
@@ -84,7 +88,7 @@ library(ggplot2)
 
 # Build factor time series via dnsr::fit_dns_model
 panel <- get_treasury_yield_combined(start_date = "2010-01-01")
-fit_panel <- fit_dns_model(panel, initial_lambda = 0.0609,
+fit_panel <- fit_dns_model(panel, initial_lambda = 0.7308,
                            lambda_constraint = "fixed")
 # fit_panel$parameters is a data.frame: Date, beta1, beta2, beta3,
 # lambda, rmse, plus day-over-day factor changes
@@ -97,7 +101,7 @@ ggplot(factor_ts, aes(Date, beta1)) +
   theme_minimal()
 
 
-## ---- 04: Estimating OU Dynamics  (qmd line 333) --------------------------------------
+## ---- 04: Estimating OU Dynamics  (qmd line 341) --------------------------------------
 
 # Subsample month-end factors: daily refits re-measure the same
 # underlying factors with noise, which biases mean-reversion speeds
@@ -122,7 +126,7 @@ ou_fits <- lapply(factor_monthly[, c("beta1","beta2","beta3")],
 ou_fits$beta1
 
 
-## ---- 05: Multivariate Estimation via `dnsr::estimate_dns_dynamics`  (qmd line 359) ---
+## ---- 05: Multivariate Estimation via `dnsr::estimate_dns_dynamics`  (qmd line 367) ---
 
 # Use dnsr's bundled estimator for the full 3x3 system, on the same
 # month-end subsample (factor changes recomputed at the monthly step)
@@ -134,13 +138,14 @@ dynamics <- estimate_dns_dynamics(factor_monthly, dt = 1/12)
 str(dynamics, max.level = 1)   # per-factor kappa/theta/sigma + correlation
 
 
-## ---- 06: Kalman Filter via KFAS  (qmd line 372) --------------------------------------
+## ---- 06: Kalman Filter via KFAS  (qmd line 380) --------------------------------------
 
 library(KFAS)
 
-# Loadings at the panel's own maturities (colnames are years)
+# Loadings at the panel's own maturities (colnames are years), so
+# lambda is per year
 mats <- as.numeric(colnames(panel)[-1])
-lam  <- 0.0609
+lam  <- 0.7308
 L2   <- (1 - exp(-lam * mats)) / (lam * mats)
 Lambda <- cbind(1, L2, L2 - exp(-lam * mats))
 
@@ -157,7 +162,7 @@ filt <- KFS(mod)
 # filt$alphahat: smoothed factor estimates
 
 
-## ---- 07: Forecasting  (qmd line 396) -------------------------------------------------
+## ---- 07: Forecasting  (qmd line 405) -------------------------------------------------
 
 # Simple VAR(1) forecast on the month-end factors: 12 steps ahead
 # at the monthly frequency is a one-year horizon

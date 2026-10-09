@@ -61,7 +61,7 @@ scenario_output <- list(
 )
 
 
-## ---- 08: Reshaping `[time × maturity × path]` to `[path × time]`  (qmd line 234) -----
+## ---- 08: Reshaping `[time × maturity × path]` to `[path × time]`  (qmd line 234) --
 
 library(dnsr)
 
