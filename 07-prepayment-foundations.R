@@ -63,6 +63,13 @@ smm_curve <- data.frame(age = as.numeric(names(hazards)),
 
 ## ---- 05: Burnout Tracking  (qmd line 303) --------------------------------------------
 
+# Simulated Prime paths (Chapter 6): [path x month]
+set.seed(42)
+yield_paths <- list(
+  PRIME = matrix(0.0725 + rnorm(50 * 120, 0, 0.004),
+                 nrow = 50, ncol = 120)
+)
+
 # Cumulative refinance exposure per path
 incentive_path <- yield_paths$PRIME - 0.0825  # vs 8.25% loan WAC
 burnout_state  <- t(apply(pmax(-incentive_path, 0), 1, cumsum))

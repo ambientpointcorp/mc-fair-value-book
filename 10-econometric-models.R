@@ -7,11 +7,17 @@
 ## ---- 01: Variable Selection  (qmd line 315) ------------------------------------------
 
 library(glmnet)
+
+monthly_panel <- read.csv("data/sample_monthly_panel.csv")
+predictor_cols <- c("refi_incentive", "age", "balance_log", "macro_index")
+X <- as.matrix(monthly_panel[, predictor_cols])
+y <- monthly_panel$prepay_event
+
 fit_lasso <- cv.glmnet(X, y, alpha = 1, family = "binomial")
 coef(fit_lasso, s = "lambda.min")
 
 
-## ---- 02: A Worked SMM Logit Example  (qmd line 355) ----------------------------------
+## ---- 02: A Worked SMM Logit Example  (qmd line 361) ----------------------------------
 
 # monthly_panel: loan-month rows with smm_event (0/1), coupon, prime,
 # refi_incentive, age, sector, balance_log
@@ -30,7 +36,7 @@ new_data <- data.frame(refi_incentive = 0.005, age = 36,
 predicted_smm <- predict(fit, new_data, type = "response")
 
 
-## ---- 03: Panel Fixed Effects with `plm`  (qmd line 399) ------------------------------
+## ---- 03: Panel Fixed Effects with `plm`  (qmd line 405) ------------------------------
 
 library(plm)
 
@@ -49,7 +55,7 @@ re_fit <- plm(log_smm ~ refi_incentive + age + I(age^2) + macro_index,
 phtest(fe_fit, re_fit)
 
 
-## ---- 04: Logit and Probit via `glm`  (qmd line 419) ----------------------------------
+## ---- 04: Logit and Probit via `glm`  (qmd line 425) ----------------------------------
 
 library(splines)   # for ns()
 
@@ -65,7 +71,7 @@ fit_cloglog <- update(fit_logit, family = binomial(link = "cloglog"))
 library(mfx); logitmfx(fit_logit, data = monthly_panel)
 
 
-## ---- 05: Multinomial Logit (Competing Risks)  (qmd line 436) -------------------------
+## ---- 05: Multinomial Logit (Competing Risks)  (qmd line 442) -------------------------
 
 library(nnet)
 
@@ -77,9 +83,20 @@ fit_mlogit <- multinom(
 summary(fit_mlogit)
 
 
-## ---- 06: Negative Binomial Counts  (qmd line 449) ------------------------------------
+## ---- 06: Negative Binomial Counts  (qmd line 455) ------------------------------------
 
 library(MASS)
+library(dplyr)
+
+# Aggregate the loan-month panel to pool-month counts
+pool_monthly <- monthly_panel %>%
+  group_by(month) %>%
+  summarize(prepay_count = sum(prepay_event),
+            loan_count   = n(),
+            pool_wac     = mean(coupon),
+            pool_wala    = mean(age),
+            prime_rate   = mean(prime),
+            .groups = "drop")
 
 # Pool-month prepay counts
 nb_fit <- glm.nb(prepay_count ~ pool_wac + pool_wala +
@@ -88,7 +105,7 @@ nb_fit <- glm.nb(prepay_count ~ pool_wac + pool_wala +
 summary(nb_fit)
 
 
-## ---- 07: LASSO Variable Selection  (qmd line 461) ------------------------------------
+## ---- 07: LASSO Variable Selection  (qmd line 478) ------------------------------------
 
 library(glmnet)
 library(broom)
@@ -113,7 +130,7 @@ ggplot(cv_df, aes(log(lambda), estimate)) +
   theme_minimal()
 
 
-## ---- 08: Splines with `mgcv`  (qmd line 487) -----------------------------------------
+## ---- 08: Splines with `mgcv`  (qmd line 504) -----------------------------------------
 
 library(mgcv)
 library(gratia)
@@ -126,14 +143,14 @@ gam_fit <- gam(
 draw(gam_fit)
 
 
-## ---- 09: Clustered Standard Errors  (qmd line 501) -----------------------------------
+## ---- 09: Clustered Standard Errors  (qmd line 518) -----------------------------------
 
 library(sandwich); library(lmtest)
 coeftest(fit_logit,
          vcov. = vcovCL(fit_logit, cluster = ~ loan_id))
 
 
-## ---- 10: Out-of-Time Validation  (qmd line 509) --------------------------------------
+## ---- 10: Out-of-Time Validation  (qmd line 526) --------------------------------------
 
 library(dplyr)
 

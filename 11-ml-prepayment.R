@@ -8,7 +8,18 @@
 
 library(lightgbm)
 
+monthly_panel  <- read.csv("data/sample_monthly_panel.csv")
+predictor_cols <- c("refi_incentive", "age", "balance_log", "macro_index")
+
+# Out-of-time split: fit on 2018-2022, watch on 2023+
+is_train <- monthly_panel$year <= 2022
+X_train  <- monthly_panel[is_train,  predictor_cols]
+y_train  <- monthly_panel$prepay_event[is_train]
+X_val    <- monthly_panel[!is_train, predictor_cols]
+y_val    <- monthly_panel$prepay_event[!is_train]
+
 dtrain <- lgb.Dataset(as.matrix(X_train), label = y_train)
+dval   <- lgb.Dataset.create.valid(dtrain, as.matrix(X_val), label = y_val)
 params <- list(
   objective   = "binary",
   metric      = "binary_logloss",
@@ -25,7 +36,7 @@ model <- lgb.train(params, dtrain, nrounds = 500,
                    early_stopping_rounds = 20)
 
 
-## ---- 02: Hyperparameter Tuning  (qmd line 350) ---------------------------------------
+## ---- 02: Hyperparameter Tuning  (qmd line 361) ---------------------------------------
 
 search_space <- list(
   num_leaves       = c(15, 31, 63, 127),
@@ -36,35 +47,42 @@ search_space <- list(
 )
 
 
-## ---- 03: Interpretability  (qmd line 372) --------------------------------------------
+## ---- 03: Interpretability  (qmd line 383) --------------------------------------------
 
 library(shapviz)
-shap <- shapviz(model, X_validation)
+# X_val is the out-of-time holdout built alongside dtrain above
+shap <- shapviz(model, as.matrix(X_val))
 sv_importance(shap)    # global importance plot
 sv_dependence(shap, "refi_incentive")  # dependence plot with interactions
 
 
-## ---- 04: Worked Example with tidymodels  (qmd line 447) ------------------------------
+## ---- 04: Worked Example with tidymodels  (qmd line 459) ------------------------------
 
 library(tidymodels)
 library(bonsai)      # provides the lightgbm engine for parsnip
 library(lightgbm)
 
-# Prep: loan-month panel with prepay_flag
+# Prep: loan-month panel with prepay_flag, ordered in calendar time
+loan_months <- read.csv("data/sample_monthly_panel.csv") %>%
+  mutate(month = as.Date(month), prepay_flag = factor(prepay_event)) %>%
+  select(prepay_flag, month, refi_incentive, age, balance_log,
+         macro_index, sector) %>%
+  arrange(month)
+
 splits <- initial_time_split(loan_months, prop = 0.80)
 train_data <- training(splits)
 test_data  <- testing(splits)
 
-# Recipe (month_id indexes the sliding folds; it is not a predictor)
+# Recipe (month indexes the sliding folds; it is not a predictor)
 recipe <- recipe(prepay_flag ~ ., data = train_data) %>%
-  update_role(month_id, new_role = "id") %>%
+  update_role(month, new_role = "id") %>%
   step_dummy(all_nominal_predictors()) %>%
   step_normalize(all_numeric_predictors())
 
 # Model spec
 lgbm_spec <- boost_tree(
   trees = 1000, tree_depth = tune(), learn_rate = tune(),
-  min_n = 100, mtry = 20
+  min_n = 100, mtry = 4
 ) %>%
   set_engine("lightgbm") %>%
   set_mode("classification")
@@ -72,8 +90,8 @@ lgbm_spec <- boost_tree(
 wf <- workflow() %>% add_recipe(recipe) %>% add_model(lgbm_spec)
 
 # Time-series CV
-folds <- sliding_period(train_data, "month_id", "month",
-                        lookback = 36, assess_stop = 12)
+folds <- sliding_period(train_data, month, "month",
+                        lookback = 36, assess_stop = 12, step = 12)
 
 # Tune hyperparameters
 res <- tune_grid(wf, resamples = folds, grid = 20,
@@ -87,7 +105,7 @@ final_fit <- fit(final_wf, data = train_data)
 preds <- predict(final_fit, test_data, type = "prob")
 
 
-## ---- 05: Random Forest with `ranger`  (qmd line 516) ---------------------------------
+## ---- 05: Random Forest with `ranger`  (qmd line 534) ---------------------------------
 
 library(ranger)
 
@@ -115,7 +133,7 @@ preds <- predict(rf_fit, monthly_test)$predictions[, "1"]
 sort(rf_fit$variable.importance, decreasing = TRUE)
 
 
-## ---- 06: LightGBM Gradient Boosting  (qmd line 545) ----------------------------------
+## ---- 06: LightGBM Gradient Boosting  (qmd line 563) ----------------------------------
 
 library(lightgbm)
 
@@ -142,19 +160,22 @@ best_iter <- cv$best_iter
 model <- lgb.train(params, dtrain, nrounds = best_iter)
 
 
-## ---- 07: XGBoost Alternative  (qmd line 573) -----------------------------------------
+## ---- 07: XGBoost Alternative  (qmd line 591) -----------------------------------------
 
 library(xgboost)
-dtrain_x <- xgb.DMatrix(X_train, label = y_train)
+# xgboost needs its own DMatrix objects; the lightgbm Datasets above
+# are not interchangeable
+dtrain_x <- xgb.DMatrix(as.matrix(X_train), label = y_train)
+dval_x   <- xgb.DMatrix(as.matrix(X_val),   label = y_val)
 xgb_fit  <- xgb.train(
   params = list(objective = "binary:logistic", eta = 0.05,
                 max_depth = 6, subsample = 0.8),
   data = dtrain_x, nrounds = 1000,
-  early_stopping_rounds = 50, evals = list(val = dval)
+  early_stopping_rounds = 50, evals = list(val = dval_x)
 )
 
 
-## ---- 08: SHAP Values  (qmd line 586) -------------------------------------------------
+## ---- 08: SHAP Values  (qmd line 607) -------------------------------------------------
 
 library(shapviz)
 
@@ -163,15 +184,15 @@ sv_importance(shap, kind = "beeswarm")
 sv_dependence(shap, "refi_incentive", color_var = "age")
 
 
-## ---- 09: Calibration with Platt Scaling  (qmd line 596) ------------------------------
+## ---- 09: Calibration with Platt Scaling  (qmd line 617) ------------------------------
 
-# Held-out set
-preds_val <- predict(model, X_val)
+# Held-out set (lightgbm predicts on a matrix, not a data frame)
+preds_val <- predict(model, as.matrix(X_val))
 calib_fit <- glm(y_val ~ preds_val, family = binomial)
 preds_calibrated <- predict(calib_fit, type = "response")
 
 
-## ---- 10: Class Imbalance with Weighted Loss  (qmd line 605) --------------------------
+## ---- 10: Class Imbalance with Weighted Loss  (qmd line 626) --------------------------
 
 class_weights <- ifelse(y_train == 1,
                          sum(y_train == 0) / sum(y_train == 1),
@@ -179,7 +200,7 @@ class_weights <- ifelse(y_train == 1,
 dtrain <- lgb.Dataset(X_train, label = y_train, weight = class_weights)
 
 
-## ---- 11: Tidymodels Workflow  (qmd line 614) -----------------------------------------
+## ---- 11: Tidymodels Workflow  (qmd line 635) -----------------------------------------
 
 library(tidymodels)
 library(bonsai)      # provides the lightgbm engine for parsnip
@@ -214,7 +235,7 @@ best <- select_best(res, metric = "roc_auc")
 final <- finalize_workflow(wf, best) %>% fit(train)
 
 
-## ---- 12: Population Stability Index  (qmd line 650) ----------------------------------
+## ---- 12: Population Stability Index  (qmd line 671) ----------------------------------
 
 psi <- function(actual, expected, n_bins = 10) {
   breaks <- quantile(expected, probs = seq(0, 1, length.out = n_bins + 1))

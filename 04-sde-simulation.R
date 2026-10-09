@@ -6,7 +6,22 @@
 
 ## ---- 01: Common Random Numbers  (qmd line 247) ---------------------------------------
 
+n_paths <- 500; n_steps <- 360; n_factors <- 3
+bump_size <- 1e-4                      # 1 bp
+
+# Stand-in for the valuation pipeline: simulate from params using the
+# supplied shocks, then value. The point is that `shocks` enters as an
+# argument rather than being drawn inside.
+simulate_and_value <- function(params, shocks) {
+  r <- params$r0 + apply(shocks[, , 1], 1, cumsum) * params$sigma
+  mean(colSums(exp(-r / 12) * 100 / n_steps))
+}
+params            <- list(r0 = 0.04, sigma = 0.01)
+params_bumped_up  <- modifyList(params, list(r0 = 0.04 + bump_size))
+params_bumped_down <- modifyList(params, list(r0 = 0.04 - bump_size))
+
 # Pre-generate shocks once
+set.seed(42)
 shocks <- array(rnorm(n_paths * n_steps * n_factors),
                 dim = c(n_paths, n_steps, n_factors))
 
@@ -19,7 +34,7 @@ V_down <- simulate_and_value(params_bumped_down, shocks)
 duration <- -(V_up - V_down) / (2 * bump_size * V_base)
 
 
-## ---- 02: Worked Numerical Example  (qmd line 269) ------------------------------------
+## ---- 02: Worked Numerical Example  (qmd line 284) ------------------------------------
 
 sim_ou_exact <- function(X0, kappa, theta, sigma, dt, n_steps, n_paths) {
   paths <- matrix(0, n_paths, n_steps + 1)
@@ -36,7 +51,7 @@ sim_ou_exact <- function(X0, kappa, theta, sigma, dt, n_steps, n_paths) {
 paths <- sim_ou_exact(0.045, 0.3, 0.04, 0.015, 1/12, 60, 500)
 
 
-## ---- 03: Exact OU Simulation  (qmd line 299) -----------------------------------------
+## ---- 03: Exact OU Simulation  (qmd line 314) -----------------------------------------
 
 sim_ou_exact <- function(X0, kappa, theta, sigma, dt, n_steps, n_paths) {
   paths <- matrix(0, n_paths, n_steps + 1)
@@ -65,7 +80,7 @@ ggplot(paths_long, aes(step, rate, group = path)) +
   theme_minimal()
 
 
-## ---- 04: Euler-Maruyama vs Exact  (qmd line 329) -------------------------------------
+## ---- 04: Euler-Maruyama vs Exact  (qmd line 344) -------------------------------------
 
 sim_ou_euler <- function(X0, kappa, theta, sigma, dt, n_steps, n_paths) {
   paths <- matrix(0, n_paths, n_steps + 1)
@@ -83,7 +98,7 @@ mean(ps[, 60]) ; mean(pe[, 60])     # both ≈ 0.0411
 sd(ps[, 60])   ; sd(pe[, 60])       # both ≈ 0.019
 
 
-## ---- 05: Cholesky for Correlated Multivariate  (qmd line 348) ------------------------
+## ---- 05: Cholesky for Correlated Multivariate  (qmd line 363) ------------------------
 
 # 3-factor DNS shocks
 sigma <- c(0.005, 0.012, 0.020)
@@ -100,7 +115,7 @@ shocks <- L %*% Z      # shocks now have covariance Sigma
 cor(t(shocks))
 
 
-## ---- 06: Common Random Numbers for Bumping  (qmd line 366) ---------------------------
+## ---- 06: Common Random Numbers for Bumping  (qmd line 381) ---------------------------
 
 # Pre-generate shocks
 set.seed(7); shocks <- array(rnorm(500 * 360 * 3),
@@ -116,7 +131,7 @@ Vdn  <- simulate_with_shocks(bump(p, -1),  shocks)
 duration <- -(Vup - Vdn) / (2 * 0.0001 * V0)
 
 
-## ---- 07: Antithetic Variates  (qmd line 383) -----------------------------------------
+## ---- 07: Antithetic Variates  (qmd line 398) -----------------------------------------
 
 # Build antithetic shock pairs
 shocks_a   <- shocks

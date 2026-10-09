@@ -130,19 +130,28 @@ psi <- function(actual_vec, expected_vec, n_bins = 10) {
   sum((a - e) * log((a + 1e-6) / (e + 1e-6)))
 }
 
-# Monitor a feature
+# Monitor a feature: the current scoring population against the one the
+# model was trained on
+training_data <- subset(monthly_panel, year <= 2022)
+monthly_now   <- subset(monthly_panel, year >= 2024)
+
 psi_now <- psi(monthly_now$refi_incentive,
                 training_data$refi_incentive)
 flag <- psi_now > 0.25   # alert threshold
 
 
-## ---- 06: C-Index for Survival Models  (qmd line 548) ---------------------------------
+## ---- 06: C-Index for Survival Models  (qmd line 552) ---------------------------------
 
 library(survival)
+
+loan_panel <- read.csv("data/sample_loan_panel.csv")
+fit_cox <- coxph(Surv(loan_age, event) ~ coupon + balance_log,
+                 data = loan_panel)
+
 concordance(fit_cox)
 
 
-## ---- 07: Time-Dependent AUC  (qmd line 555) ------------------------------------------
+## ---- 07: Time-Dependent AUC  (qmd line 564) ------------------------------------------
 
 library(survAUC)
 library(survival)
@@ -171,7 +180,7 @@ ggplot(data.frame(month = times_eval, auc = auc_t$auc),
   theme_minimal()
 
 
-## ---- 08: Reproducibility: Versioning Run Outputs  (qmd line 585) ---------------------
+## ---- 08: Reproducibility: Versioning Run Outputs  (qmd line 594) ---------------------
 
 record_run <- function(model, inputs, outputs) {
   list(
@@ -186,7 +195,7 @@ record_run <- function(model, inputs, outputs) {
 }
 
 
-## ---- 09: Validation Report Template  (qmd line 601) ----------------------------------
+## ---- 09: Validation Report Template  (qmd line 610) ----------------------------------
 
 build_validation_report <- function(model, train, test,
                                     predictor_cols, backtest_results) {

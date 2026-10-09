@@ -47,18 +47,27 @@ fit_tv <- coxph(Surv(tstart, tstop, event) ~ coupon_t + prime_t, data = loan_lon
 
 ## ---- 04: Discrete-Time Hazard via Logit/Cloglog  (qmd line 373) ----------------------
 
+# Long-format loan-month panel: one row per loan-month at risk, with the
+# month's event flag and the time-varying index level
+loan_monthly_long <- transform(monthly_panel,
+                               event   = prepay_event,
+                               prime_t = prime)
+
 # Discrete-time logit hazard
 fit_logit <- glm(event ~ coupon + age + sector + prime_t,
                  family = binomial(link = "logit"),
                  data = loan_monthly_long)
 
 
-## ---- 05: Left Truncation and Right Censoring  (qmd line 392) -------------------------
+## ---- 05: Left Truncation and Right Censoring  (qmd line 398) -------------------------
 
-Surv(time = entry_age, time2 = exit_age, event = event)
+# The sample panel carries the delayed-entry fields: entry_age is the
+# loan's age when the observation window opens, exit_age its age at the
+# terminal event or at censoring
+with(loan_panel, Surv(time = entry_age, time2 = exit_age, event = event))
 
 
-## ---- 06: Worked Example: Cox Model for Loan-Pool Prepayment  (qmd line 424) ----------
+## ---- 06: Worked Example: Cox Model for Loan-Pool Prepayment  (qmd line 433) ----------
 
 library(survival)
 
@@ -77,7 +86,7 @@ summary(fit)
 # Output: coefficients, standard errors, hazard ratios, concordance
 
 
-## ---- 07: Output: coefficients, standard errors, hazard ratios, concordance  (qmd line 450) -
+## ---- 07: Output: coefficients, standard errors, hazard ratios, concordance  (qmd line 459) -
 
 # Schoenfeld residuals
 cox.zph(fit)   # global test of proportional hazards
@@ -86,7 +95,7 @@ cox.zph(fit)   # global test of proportional hazards
 concordance(fit)   # typically 0.65-0.72 for good loan-prepayment models
 
 
-## ---- 08: Kaplan-Meier with Stratification  (qmd line 482) ----------------------------
+## ---- 08: Kaplan-Meier with Stratification  (qmd line 491) ----------------------------
 
 library(survival)
 library(survminer)
@@ -100,7 +109,7 @@ ggsurvplot(km, data = loan_panel, conf.int = TRUE,
 survdiff(Surv(loan_age, event) ~ sector, data = loan_panel)
 
 
-## ---- 09: Cox Proportional-Hazards  (qmd line 497) ------------------------------------
+## ---- 09: Cox Proportional-Hazards  (qmd line 506) ------------------------------------
 
 fit_cox <- coxph(
   Surv(loan_age, event) ~ coupon + log(balance) + factor(sector) +
@@ -111,7 +120,7 @@ summary(fit_cox)
 exp(coef(fit_cox))    # hazard ratios
 
 
-## ---- 10: Diagnostic Residuals  (qmd line 509) ----------------------------------------
+## ---- 10: Diagnostic Residuals  (qmd line 518) ----------------------------------------
 
 # Schoenfeld residuals: PH assumption check
 library(survminer)
@@ -130,7 +139,7 @@ ggplot(data.frame(coupon = loan_panel$coupon, residual = mart),
   theme_minimal()
 
 
-## ---- 11: Parametric Survival via flexsurv  (qmd line 529) ----------------------------
+## ---- 11: Parametric Survival via flexsurv  (qmd line 538) ----------------------------
 
 library(flexsurv)
 
@@ -146,7 +155,7 @@ fit_gengamma <- flexsurvreg(
 AIC(fit_weibull, fit_gengamma)
 
 
-## ---- 12: Discrete-Time Hazard via cloglog  (qmd line 546) ----------------------------
+## ---- 12: Discrete-Time Hazard via cloglog  (qmd line 555) ----------------------------
 
 library(splines)   # for ns()
 
@@ -161,7 +170,7 @@ summary(fit_dt)
 monthly_panel$smm_hat <- predict(fit_dt, type = "response")
 
 
-## ---- 13: Competing Risks with cmprsk  (qmd line 562) ---------------------------------
+## ---- 13: Competing Risks with cmprsk  (qmd line 571) ---------------------------------
 
 library(cmprsk)
 
@@ -174,7 +183,7 @@ fit_fg <- crr(ftime = loan_panel$loan_age,
 summary(fit_fg)
 
 
-## ---- 14: Time-Varying Covariates via tmerge  (qmd line 576) --------------------------
+## ---- 14: Time-Varying Covariates via tmerge  (qmd line 585) --------------------------
 
 monthly_covariates <- with(monthly_panel,
   data.frame(loan_id, month_id = age, prime_value = prime))
