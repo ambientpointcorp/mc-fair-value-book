@@ -126,7 +126,12 @@ relative data paths in the chapter code (`data/sample_loan_panel.csv`, and so
 on) resolve.
 
 Within a chapter, blocks are written to run in order: later blocks may use
-objects defined by earlier ones.
+objects defined by earlier ones. The Part IV chapters (19 through 22) each
+open with a shared setup block that builds the pool, rate paths, bond-level
+cashflows and solved OAS from the sample pool bundled with `oasr`, so each
+chapter runs on its own. Chapter 20's reporting block calls
+`create_oas_report()`, which renders through pandoc: run it from RStudio, or
+point `RSTUDIO_PANDOC` at a pandoc installation first.
 
 ### Packages
 
