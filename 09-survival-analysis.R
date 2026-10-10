@@ -10,19 +10,24 @@ library(survival)
 library(survminer)
 
 loan_panel <- read.csv("data/sample_loan_panel.csv")
-fit_km <- survfit(Surv(time, event) ~ sector, data = loan_panel)
+fit_km <- survfit(Surv(loan_age, event) ~ sector, data = loan_panel)
 ggsurvplot(fit_km, xlab = "Months", ylab = "Survival",
            legend.title = "Sector")
 
 
 ## ---- 02: Cox Proportional-Hazards Model  (qmd line 268) ------------------------------
 
-fit_cox <- coxph(Surv(time, event) ~ coupon_rate + loan_age + sector,
+# Loan age is the timescale, so the covariates are origination-time
+# characteristics: a covariate that is itself a function of elapsed
+# time is collinear with the risk set and the partial likelihood
+# will not converge.
+fit_cox <- coxph(Surv(loan_age, event) ~ coupon_rate +
+                   log(orig_balance) + factor(sector_grp),
                  data = loan_panel)
 summary(fit_cox)
 
 
-## ---- 03: Time-Varying Covariates  (qmd line 308) -------------------------------------
+## ---- 03: Time-Varying Covariates  (qmd line 313) -------------------------------------
 
 # Original: one row per loan
 # Converted: one row per (loan, covariate interval)
@@ -45,7 +50,7 @@ loan_long <- tmerge(data1 = loan_long, data2 = loan_monthly_covariates,
 fit_tv <- coxph(Surv(tstart, tstop, event) ~ coupon_t + prime_t, data = loan_long)
 
 
-## ---- 04: Discrete-Time Hazard via Logit/Cloglog  (qmd line 373) ----------------------
+## ---- 04: Discrete-Time Hazard via Logit/Cloglog  (qmd line 378) ----------------------
 
 # Long-format loan-month panel: one row per loan-month at risk, with the
 # month's event flag and the time-varying index level
@@ -59,7 +64,7 @@ fit_logit <- glm(event ~ coupon + age + sector + prime_t,
                  data = loan_monthly_long)
 
 
-## ---- 05: Left Truncation and Right Censoring  (qmd line 398) -------------------------
+## ---- 05: Left Truncation and Right Censoring  (qmd line 403) -------------------------
 
 # The sample panel carries the delayed-entry fields: entry_age is the
 # loan's age when the observation window opens, exit_age its age at the
@@ -67,7 +72,7 @@ fit_logit <- glm(event ~ coupon + age + sector + prime_t,
 with(loan_panel, Surv(time = entry_age, time2 = exit_age, event = event))
 
 
-## ---- 06: Worked Example: Cox Model for Loan-Pool Prepayment  (qmd line 433) ----------
+## ---- 06: Worked Example: Cox Model for Loan-Pool Prepayment  (qmd line 438) ----------
 
 library(survival)
 
@@ -86,7 +91,7 @@ summary(fit)
 # Output: coefficients, standard errors, hazard ratios, concordance
 
 
-## ---- 07: Output: coefficients, standard errors, hazard ratios, concordance  (qmd line 459) -
+## ---- 07: Output: coefficients, standard errors, hazard ratios, concordance  (qmd line 464) -
 
 # Schoenfeld residuals
 cox.zph(fit)   # global test of proportional hazards
@@ -95,7 +100,7 @@ cox.zph(fit)   # global test of proportional hazards
 concordance(fit)   # typically 0.65-0.72 for good loan-prepayment models
 
 
-## ---- 08: Kaplan-Meier with Stratification  (qmd line 491) ----------------------------
+## ---- 08: Kaplan-Meier with Stratification  (qmd line 496) ----------------------------
 
 library(survival)
 library(survminer)
@@ -109,7 +114,7 @@ ggsurvplot(km, data = loan_panel, conf.int = TRUE,
 survdiff(Surv(loan_age, event) ~ sector, data = loan_panel)
 
 
-## ---- 09: Cox Proportional-Hazards  (qmd line 506) ------------------------------------
+## ---- 09: Cox Proportional-Hazards  (qmd line 511) ------------------------------------
 
 fit_cox <- coxph(
   Surv(loan_age, event) ~ coupon + log(balance) + factor(sector) +
@@ -120,7 +125,7 @@ summary(fit_cox)
 exp(coef(fit_cox))    # hazard ratios
 
 
-## ---- 10: Diagnostic Residuals  (qmd line 518) ----------------------------------------
+## ---- 10: Diagnostic Residuals  (qmd line 523) ----------------------------------------
 
 # Schoenfeld residuals: PH assumption check
 library(survminer)
@@ -139,7 +144,7 @@ ggplot(data.frame(coupon = loan_panel$coupon, residual = mart),
   theme_minimal()
 
 
-## ---- 11: Parametric Survival via flexsurv  (qmd line 538) ----------------------------
+## ---- 11: Parametric Survival via flexsurv  (qmd line 543) ----------------------------
 
 library(flexsurv)
 
@@ -155,7 +160,7 @@ fit_gengamma <- flexsurvreg(
 AIC(fit_weibull, fit_gengamma)
 
 
-## ---- 12: Discrete-Time Hazard via cloglog  (qmd line 555) ----------------------------
+## ---- 12: Discrete-Time Hazard via cloglog  (qmd line 560) ----------------------------
 
 library(splines)   # for ns()
 
@@ -170,7 +175,7 @@ summary(fit_dt)
 monthly_panel$smm_hat <- predict(fit_dt, type = "response")
 
 
-## ---- 13: Competing Risks with cmprsk  (qmd line 571) ---------------------------------
+## ---- 13: Competing Risks with cmprsk  (qmd line 576) ---------------------------------
 
 library(cmprsk)
 
@@ -183,7 +188,7 @@ fit_fg <- crr(ftime = loan_panel$loan_age,
 summary(fit_fg)
 
 
-## ---- 14: Time-Varying Covariates via tmerge  (qmd line 585) --------------------------
+## ---- 14: Time-Varying Covariates via tmerge  (qmd line 590) --------------------------
 
 monthly_covariates <- with(monthly_panel,
   data.frame(loan_id, month_id = age, prime_value = prime))
