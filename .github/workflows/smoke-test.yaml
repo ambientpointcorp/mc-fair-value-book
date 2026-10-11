@@ -1,0 +1,170 @@
+# Nothing checked these 22 chapter scripts before this workflow: the repository
+# carries no package, no test suite and no CI, so a breaking change in dnsr or
+# oasr would surface only when a reader ran the code and it failed on them.
+#
+# Two jobs, because the chapters divide into what can be verified cheaply and
+# what has to be executed:
+#
+#   parse  every chapter, for syntax. Seconds, and no packages to install, so
+#          the chapters excluded from the run job are still covered this far.
+#   run    the 17 chapters that complete offline against the bundled sample
+#          data and the sample pool in oasr. Roughly five minutes of compute.
+#
+# Five chapters are deliberately not executed:
+#
+#   01, 03, 05, 06  call get_treasury_yield_data(), which needs a FRED API key.
+#                   They fail at that first call with no key present, so running
+#                   them here would report a missing secret as broken code. Add
+#                   a fred_api_key secret and they can join the run job.
+#   11              trains the tidymodels/xgboost/lightgbm comparison. It ran
+#                   past a ten-minute limit locally, and tune_grid() swallows
+#                   the timeout per resample and exits 0 with an unfit model --
+#                   so it would pass here without having checked anything.
+#                   Excluding it also drops tidymodels, xgboost, lightgbm,
+#                   bonsai, shapviz, ranger, yuima, KFAS and vars from the
+#                   install, which is most of the dependency weight.
+name: smoke-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  parse:
+    name: parse every chapter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Parse all chapter scripts
+        shell: Rscript {0}
+        run: |
+          files <- sort(list.files(".", pattern = "^[0-9]+-.*\\.R$"))
+          stopifnot(length(files) > 0)
+          bad <- character()
+          for (f in files) {
+            ok <- tryCatch({ parse(f); TRUE },
+                           error = function(e) { cat(f, ":", conditionMessage(e), "\n"); FALSE })
+            if (!ok) bad <- c(bad, f)
+          }
+          cat("parsed", length(files) - length(bad), "of", length(files), "chapters\n")
+          if (length(bad)) stop("chapters that do not parse: ", paste(bad, collapse = ", "))
+
+  run:
+    name: run the offline chapters
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      # Chapter 20 ends by rendering create_oas_report() through pandoc. That
+      # is the one step that fails on a bare machine, and the README tells
+      # readers to point RSTUDIO_PANDOC at an installation; here the runner
+      # supplies it.
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # This repository is not a package, so there is no DESCRIPTION to read
+      # the dependencies from. The list is the union of the library() calls in
+      # the chapters this job runs; splines ships with R.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            github::ambientpointcorp/dnsr
+            github::ambientpointcorp/oasr
+            any::MASS
+            any::PerformanceAnalytics
+            any::actuar
+            any::bizdays
+            any::broom
+            any::cmprsk
+            any::dplyr
+            any::flexsurv
+            any::future
+            any::future.apply
+            any::ggplot2
+            any::glmnet
+            any::gratia
+            any::lmtest
+            any::mfx
+            any::mgcv
+            any::nnet
+            any::pROC
+            any::plm
+            any::profvis
+            any::randtoolbox
+            any::sandwich
+            any::survAUC
+            any::survival
+            any::survminer
+            any::tidyr
+
+      # Each chapter runs in its own process, the way a reader runs one: later
+      # blocks within a chapter depend on earlier ones, but no chapter should
+      # depend on another having been sourced first. Every chapter runs even
+      # after one fails, so a broken dnsr or oasr release shows up as the full
+      # list of affected chapters rather than just the first.
+      - name: Run chapters
+        run: |
+          chapters=(
+            02-nelson-siegel.R
+            04-sde-simulation.R
+            07-prepayment-foundations.R
+            08-prepayment-theory.R
+            09-survival-analysis.R
+            10-econometric-models.R
+            12-credit-model.R
+            13-model-validation.R
+            14-cashflow-projection.R
+            15-amortization-mechanics.R
+            16-settlement-conventions.R
+            17-pool-aggregation.R
+            18-cashflow-diagnostics.R
+            19-fair-value-mc.R
+            20-oas-analysis.R
+            21-sensitivity.R
+            22-hedging.R
+          )
+          mkdir -p logs
+          failed=()
+          echo "| chapter | result | seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for f in "${chapters[@]}"; do
+            echo "::group::$f"
+            start=$SECONDS
+            if Rscript "$f" > "logs/${f%.R}.log" 2>&1; then
+              result=pass
+            else
+              result=FAIL
+              failed+=("$f")
+            fi
+            dur=$(( SECONDS - start ))
+            tail -40 "logs/${f%.R}.log"
+            echo "::endgroup::"
+            echo "$f $result ${dur}s"
+            echo "| \`$f\` | $result | $dur |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "chapters that failed: ${failed[*]}"
+            exit 1
+          fi
+          echo "all ${#chapters[@]} chapters completed"
+
+      - name: Upload chapter logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chapter-logs
+          path: logs/
