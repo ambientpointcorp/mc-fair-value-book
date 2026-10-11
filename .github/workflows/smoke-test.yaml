@@ -6,23 +6,25 @@
 # what has to be executed:
 #
 #   parse  every chapter, for syntax. Seconds, and no packages to install, so
-#          the chapters excluded from the run job are still covered this far.
+#          the chapter excluded from the other jobs is still covered this far.
 #   run    the 17 chapters that complete offline against the bundled sample
 #          data and the sample pool in oasr. Roughly five minutes of compute.
+#   fred   01, 03, 05 and 06, which call get_treasury_yield_data() and so need
+#          a FRED API key. Separate because it depends on a secret and on a
+#          live external API: without the secret it skips rather than failing,
+#          and a FRED outage cannot turn the run job red. The key is read from
+#          a secret into the lowercase variable dnsr expects, and is never
+#          echoed -- the job tests only whether it is non-empty.
 #
-# Five chapters are deliberately not executed:
+# One chapter is deliberately not executed:
 #
-#   01, 03, 05, 06  call get_treasury_yield_data(), which needs a FRED API key.
-#                   They fail at that first call with no key present, so running
-#                   them here would report a missing secret as broken code. Add
-#                   a fred_api_key secret and they can join the run job.
 #   11              trains the tidymodels/xgboost/lightgbm comparison. It ran
 #                   past a ten-minute limit locally, and tune_grid() swallows
 #                   the timeout per resample and exits 0 with an unfit model --
 #                   so it would pass here without having checked anything.
 #                   Excluding it also drops tidymodels, xgboost, lightgbm,
-#                   bonsai, shapviz, ranger, yuima, KFAS and vars from the
-#                   install, which is most of the dependency weight.
+#                   bonsai, shapviz and ranger from every install here, which
+#                   is most of the dependency weight.
 name: smoke-test
 
 on:
@@ -90,6 +92,7 @@ jobs:
             any::bizdays
             any::broom
             any::cmprsk
+            any::digest
             any::dplyr
             any::flexsurv
             any::future
@@ -105,6 +108,7 @@ jobs:
             any::plm
             any::profvis
             any::randtoolbox
+            any::readr
             any::sandwich
             any::survAUC
             any::survival
@@ -167,4 +171,96 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: chapter-logs
+          path: logs/
+
+  fred:
+    name: run the FRED chapters
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # dnsr reads this exact lowercase name, via Sys.getenv("fred_api_key"),
+      # so the secret is mapped to it rather than read directly. The value is
+      # only ever tested for emptiness below; nothing here prints it, dnsr
+      # passes it to httr as a query parameter rather than building a URL
+      # string with it, and Actions masks a registered secret in the log if it
+      # ever did appear.
+      fred_api_key: ${{ secrets.FRED_API_KEY }}
+
+    steps:
+      # The secrets context cannot be read in a job-level `if`, so the presence
+      # of the key becomes a step output that the rest of the job keys off.
+      # This skips cleanly on a repository with no secret set, rather than
+      # reporting an absent key as broken chapter code.
+      - name: Is a FRED key available
+        id: key
+        run: |
+          if [ -n "$fred_api_key" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No FRED_API_KEY secret is set, so chapters 01, 03, 05 and 06 were skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: r-lib/actions/setup-r@v2
+        if: steps.key.outputs.present == 'true'
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        if: steps.key.outputs.present == 'true'
+        with:
+          packages: |
+            github::ambientpointcorp/dnsr
+            github::ambientpointcorp/oasr
+            any::KFAS
+            any::dplyr
+            any::ggplot2
+            any::purrr
+            any::tibble
+            any::vars
+            any::yuima
+            any::zoo
+
+      - name: Run chapters
+        if: steps.key.outputs.present == 'true'
+        run: |
+          chapters=(
+            01-term-structure.R
+            03-dynamic-ns.R
+            05-yuima.R
+            06-yield-evolution.R
+          )
+          mkdir -p logs
+          failed=()
+          echo "| chapter | result | seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for f in "${chapters[@]}"; do
+            echo "::group::$f"
+            start=$SECONDS
+            if Rscript "$f" > "logs/${f%.R}.log" 2>&1; then
+              result=pass
+            else
+              result=FAIL
+              failed+=("$f")
+            fi
+            dur=$(( SECONDS - start ))
+            tail -40 "logs/${f%.R}.log"
+            echo "::endgroup::"
+            echo "$f $result ${dur}s"
+            echo "| \`$f\` | $result | $dur |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "chapters that failed: ${failed[*]}"
+            exit 1
+          fi
+          echo "all ${#chapters[@]} chapters completed"
+
+      - name: Upload chapter logs
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fred-chapter-logs
           path: logs/
