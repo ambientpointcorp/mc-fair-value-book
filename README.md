@@ -7,6 +7,16 @@ Prepayment Modeling, and OAS Analytics*, by Ariel Rodríguez Herrera
 
 ISBN 979-8-234-25206-7 (print) · ISBN 979-8-234-25207-4 (ebook)
 
+<!-- badges: start -->
+[![smoke-test](https://github.com/ambientpointcorp/mc-fair-value-book/actions/workflows/smoke-test.yaml/badge.svg?branch=main)](https://github.com/ambientpointcorp/mc-fair-value-book/actions/workflows/smoke-test.yaml)
+<!-- badges: end -->
+
+The badge covers the chapter scripts. Every chapter is parsed on each push, and
+the 17 that run offline against the bundled data are executed. Chapters 01, 03,
+05 and 06 need a FRED API key and run in a separate `fred-chapters` workflow, so
+an outage at FRED cannot turn this badge red. Chapter 11 is parsed but not
+executed; `smoke-test.yaml` says why.
+
 ## About the book
 
 The book develops the technical methodology behind Monte Carlo fair value
