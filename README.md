@@ -55,9 +55,7 @@ presents path-level NPV and convergence diagnostics, IO and servicing strip
 valuation, OAS analysis, sensitivity and key rate duration, and hedging with
 Treasury futures.
 
-The **appendices** give an overview of the Q-ABS Fair Value Engine — the
-production implementation of this methodology — together with a function
-reference and a glossary.
+The **appendices** give a function reference and a glossary.
 
 ## What is in this repository
 
@@ -240,9 +238,8 @@ for Loan Pools*, © 2026 Ariel Rodríguez Herrera, ISBN 979-8-234-25207-4.
 
 The book's text, figures, and tables are © 2026 Ariel Rodríguez Herrera, all
 rights reserved. The `dnsr` and `oasr` packages are open source under the MIT
-License. Ambient Point Corp.'s commercial software — including the Q-ABS Fair
-Value Engine and the Q-SBA suite of packages and applications — is proprietary
-and licensed separately.
+License. Ambient Point Corp.'s commercial software is proprietary and licensed
+separately.
 
 The code, models, and procedures here are provided "as is," without warranty of
 any kind, for instruction rather than as investment, accounting, or legal
@@ -251,4 +248,3 @@ advice. Nothing here is a recommendation to buy or sell any security.
 ## Links
 
 - [ambientpointcorp.com](https://ambientpointcorp.com)
-- [quantome.ai](https://quantome.ai)
