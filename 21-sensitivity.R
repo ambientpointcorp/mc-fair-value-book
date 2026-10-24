@@ -24,7 +24,7 @@ compute_eff_duration <- function(cashflows, rate_paths, oas, h_bp = 25) {
 }
 
 
-## ---- 02: Setup: the Shared Part IV Pool  (qmd line 340) ------------------------------
+## ---- 02: Setup: the Shared Part IV Pool  (qmd line 346) ------------------------------
 
 library(oasr)
 
@@ -53,7 +53,7 @@ oas_result <- calculate_oas(pool_assets, rate_paths, prepay_mod,
                             verbose = FALSE)
 
 
-## ---- 03: Effective Duration and Convexity via `oasr::calculate_duration_convexity`  (qmd line 372) -
+## ---- 03: Effective Duration and Convexity via `oasr::calculate_duration_convexity`  (qmd line 378) -
 
 library(oasr)
 
@@ -73,7 +73,7 @@ dc$duration
 dc$convexity
 
 
-## ---- 04: OAS Sensitivity (Rate Shifts and PPC) via `oasr::run_oas_sensitivity`  (qmd line 393) -
+## ---- 04: OAS Sensitivity (Rate Shifts and PPC) via `oasr::run_oas_sensitivity`  (qmd line 399) -
 
 sens <- run_oas_sensitivity(
   oas_result         = oas_result,
@@ -84,7 +84,7 @@ sens <- run_oas_sensitivity(
 plot(sens)
 
 
-## ---- 05: Key-Rate Durations (User Helper Built on `oasr` Primitives)  (qmd line 405) -
+## ---- 05: Key-Rate Durations (User Helper Built on `oasr` Primitives)  (qmd line 411) -
 
 # Didactic KRD: discount the path-average pool cashflow off the reference
 # path, bumping only the months that fall in a bucket around each key tenor
@@ -112,7 +112,7 @@ krd_vec <- krd_by_bucket(pool_cf_vec, times, rate_paths,
 sum(krd_vec)
 
 
-## ---- 06: Prepayment Duration (User Helper)  (qmd line 434) ---------------------------
+## ---- 06: Prepayment Duration (User Helper)  (qmd line 440) ---------------------------
 
 prepay_duration <- function(asset_data, rate_paths, prepay_mod,
                              oas, ppc_bump = 0.10) {
@@ -137,7 +137,7 @@ prepay_duration <- function(asset_data, rate_paths, prepay_mod,
 }
 
 
-## ---- 07: Scenario Stress (User Helper)  (qmd line 460) -------------------------------
+## ---- 07: Scenario Stress (User Helper)  (qmd line 466) -------------------------------
 
 shift_all_tenors <- function(rate_paths, shift_dec) {
   rate_paths$yield_paths <- lapply(rate_paths$yield_paths,
@@ -157,7 +157,7 @@ stress_results <- lapply(scenarios, function(fn) {
 })
 
 
-## ---- 08: P&L Attribution  (qmd line 481) ---------------------------------------------
+## ---- 08: P&L Attribution  (qmd line 487) ---------------------------------------------
 
 attribute_pnl <- function(dV, sensitivities, market_moves) {
   parts <- list(
@@ -171,7 +171,7 @@ attribute_pnl <- function(dV, sensitivities, market_moves) {
 }
 
 
-## ---- 09: Sensitivity Dashboard  (qmd line 496) ---------------------------------------
+## ---- 09: Sensitivity Dashboard  (qmd line 502) ---------------------------------------
 
 V0 <- sum(calculate_present_value(pool_cf, rate_paths, oas = oas_result$oas,
                                   asset_level = FALSE, total_idx = 5)$mean_pvs)
